@@ -1,0 +1,100 @@
+from fastapi import APIRouter, HTTPException
+from datetime import datetime
+
+from models.schemas import (
+    AnalyzeRejectionRequest, AnalyzeRejectionResponse,
+    RejectionNote, GlobalAnalysis, AppData,
+)
+from agents.learning_agent import analyze_rejection, build_global_analysis
+from services import storage_service as store
+
+router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+
+
+@router.post("/rejection/analyze", response_model=AnalyzeRejectionResponse)
+async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
+    data = await store.load_data()
+
+    if not data.current_profile_state:
+        raise HTTPException(400, "No profile found. Upload resume first.")
+
+    app = next((a for a in data.applications if a.id == req.application_id), None)
+    if not app:
+        raise HTTPException(404, f"Application {req.application_id} not found.")
+
+    rejection = RejectionNote(
+        application_id=req.application_id,
+        interview_experience=req.interview_experience,
+        rejection_email=req.rejection_email,
+        topics_struggled=req.topics_struggled,
+        missing_skills=req.missing_skills,
+        recruiter_feedback=req.recruiter_feedback,
+        analyzed_at=datetime.utcnow().isoformat() + "Z",
+    )
+
+    try:
+        profile_update, updated_profile = await analyze_rejection(
+            data.current_profile_state, rejection, app
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Rejection analysis failed: {e}")
+
+    # Persist: updated profile + rejection note + profile update
+    data.current_profile_state = updated_profile
+    await store.save_data(data)
+    await store.upsert_rejection(rejection)
+    await store.add_profile_update(profile_update)
+
+    # Auto-update application status
+    app.status = "not_selected"
+    app.updated_at = datetime.utcnow().isoformat() + "Z"
+    await store.upsert_application(app)
+
+    return AnalyzeRejectionResponse(
+        skill_changes=profile_update.changes,
+        recommendations=profile_update.recommendations,
+        profile_update=profile_update,
+        summary=f"Profile updated based on rejection from {app.company}.",
+    )
+
+
+@router.get("/rejection/{app_id}", response_model=RejectionNote)
+async def get_rejection(app_id: str):
+    data = await store.load_data()
+    rej = next((r for r in data.rejections if r.application_id == app_id), None)
+    if not rej:
+        raise HTTPException(404, "No rejection note found for this application.")
+    return rej
+
+
+@router.get("/global", response_model=GlobalAnalysis)
+async def get_global_analysis():
+    data = await store.load_data()
+    if data.global_analysis:
+        return data.global_analysis
+    raise HTTPException(404, "No global analysis yet. Refresh to generate.")
+
+
+@router.post("/global/refresh", response_model=GlobalAnalysis)
+async def refresh_global_analysis():
+    data = await store.load_data()
+    if not data.rejections:
+        raise HTTPException(400, "No rejections to analyze yet.")
+    try:
+        analysis = await build_global_analysis(data)
+    except Exception as e:
+        raise HTTPException(500, f"Global analysis failed: {e}")
+    await store.update_global_analysis(analysis)
+    return analysis
+
+
+@router.get("/profile-history")
+async def get_profile_history():
+    data = await store.load_data()
+    return {"history": data.profile_update_history}
+
+
+@router.get("/data")
+async def get_all_data():
+    """Return the entire data.json for debugging / export."""
+    return await store.load_data()
