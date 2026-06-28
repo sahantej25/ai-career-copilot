@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { useAppStore } from "@/hooks/useAppStore";
 import { useAuthStore } from "@/hooks/useAuthStore";
-import { cn, formatRelativeTime, getMatchColor, jobPreviewText, SOURCE_LABELS, stripHtml } from "@/lib/utils";
+import { cn, formatRelativeTime, formatPostedDate, getMatchColor, jobPreviewText, SOURCE_LABELS, stripHtml } from "@/lib/utils";
 import * as api from "@/lib/api";
 import type { JobListing, PostedWithin } from "@/types";
 import { POSTED_WITHIN_OPTIONS } from "@/types";
@@ -90,10 +90,15 @@ function JobCard({
                 {job.salary && (
                   <span className="font-medium text-brand-700">{job.salary}</span>
                 )}
-                {job.published_at && (
-                  <span className="inline-flex items-center gap-1">
+                {job.published_at ? (
+                  <span className="inline-flex items-center gap-1" title={formatPostedDate(job.published_at)}>
                     <Clock className="h-3.5 w-3.5" />
-                    {formatRelativeTime(job.published_at)}
+                    Posted {formatRelativeTime(job.published_at)}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-ink-400">
+                    <Clock className="h-3.5 w-3.5" />
+                    Date unavailable
                   </span>
                 )}
                 <Badge variant="default" className="text-[10px]">
@@ -338,7 +343,7 @@ export function DiscoverTab() {
               onClick={() => {
                 const next = !remoteOnly;
                 setRemoteOnly(next);
-                loadJobs(true, { remoteOnly: next });
+                loadJobs(false, { remoteOnly: next });
               }}
               className={cn(
                 "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
@@ -355,7 +360,7 @@ export function DiscoverTab() {
                 type="button"
                 onClick={() => {
                   setPostedWithin(value);
-                  loadJobs(true, { postedWithin: value });
+                  loadJobs(false, { postedWithin: value });
                 }}
                 className={cn(
                   "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",

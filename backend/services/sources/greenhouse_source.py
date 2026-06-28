@@ -4,6 +4,7 @@ import asyncio
 import httpx
 
 from models.schemas import JobListing
+from services.job_dates import normalize_published_at
 from services.job_match_scorer import job_excerpt, strip_html
 
 GH_API = "https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
@@ -43,6 +44,14 @@ async def _fetch_board(
         location = _location_str(item)
         remote = "remote" in location.lower() or "remote" in title.lower()
 
+        raw_posted = (
+            item.get("first_published")
+            or item.get("published_at")
+            or item.get("created_at")
+            or item.get("updated_at")
+            or ""
+        )
+
         jobs.append(
             JobListing(
                 id=f"greenhouse:{token}:{item.get('id')}",
@@ -58,7 +67,7 @@ async def _fetch_board(
                 apply_url=item.get("absolute_url") or "",
                 source="greenhouse",
                 company_logo="",
-                published_at=item.get("updated_at") or "",
+                published_at=normalize_published_at(raw_posted),
             )
         )
         if len(jobs) >= limit:

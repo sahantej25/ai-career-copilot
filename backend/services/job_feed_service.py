@@ -1,13 +1,12 @@
 """Aggregate real job listings from LinkedIn, Greenhouse, and Hiring Cafe."""
 import asyncio
-from datetime import datetime
 
 import httpx
 
 from config import settings
 from models.schemas import JobListing
 from services.job_sanitize import sanitize_job_listing
-from services.job_recency import filter_jobs_by_recency, posted_within_to_days
+from services.job_recency import max_job_fetch_days, sort_jobs_for_display
 from services.location_filter import job_matches_location
 from services.sources.greenhouse_source import fetch_greenhouse_jobs
 from services.sources.hiringcafe_source import fetch_hiringcafe_jobs
@@ -26,13 +25,18 @@ async def fetch_job_feed(
     limit_per_source: int = 15,
     remote_only: bool = False,
     location: str = "",
-    posted_within: str = "anytime",
+    posted_within: str = "anytime",  # noqa: ARG001 — recency applied at serve time, not fetch time
 ) -> tuple[list[JobListing], list[str]]:
+    """
+    Fetch jobs from upstream sources using the widest configured window.
+    Recency filtering is applied later so 24h ⊆ 3d ⊆ 7d ⊆ anytime on the same cache.
+    """
     active = [s for s in (sources or list(SOURCES)) if s in SOURCES]
     if not active:
         active = list(SOURCES)
 
     loc = location or settings.linkedin_default_location
+    fetch_days = max_job_fetch_days()
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json, text/html"}
     async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers, follow_redirects=True) as client:
         tasks = []
@@ -47,7 +51,7 @@ async def fetch_job_feed(
                 tasks.append(
                     fetch_hiringcafe_jobs(
                         client, search, limit_per_source, loc,
-                        days=posted_within_to_days(posted_within),
+                        days=fetch_days,
                     )
                 )
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -75,18 +79,4 @@ async def fetch_job_feed(
             seen_keys.add(dedupe_key)
             merged.append(sanitize_job_listing(job))
 
-    merged = filter_jobs_by_recency(merged, posted_within)
-
-    def sort_key(job: JobListing):
-        ts = job.published_at or ""
-        try:
-            if "T" in ts:
-                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            else:
-                dt = datetime.fromisoformat(ts)
-            return dt.timestamp()
-        except Exception:
-            return 0.0
-
-    merged.sort(key=sort_key, reverse=True)
-    return merged, used_sources
+    return sort_jobs_for_display(merged), used_sources
