@@ -476,7 +476,9 @@ async def run_resume_pipeline(
     )
 
     accent = style.accent_hex if style else "#10b981"
-    package.latex_source = build_latex_document(profile, package, accent_hex=accent)
+    package.latex_source = build_latex_document(
+        profile, package, original=original, accent_hex=accent,
+    )
 
     all_steps.append(
         MatchStep(

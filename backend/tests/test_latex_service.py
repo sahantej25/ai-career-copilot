@@ -65,6 +65,22 @@ def test_build_latex_document_uses_reference_template():
     assert r"\end{document}" in latex
 
 
+def test_build_latex_includes_publications_from_original():
+    from models.schemas import ResumeSnapshot
+
+    profile = CandidateProfile(name="Jane Doe", summary="Engineer")
+    original = ResumeSnapshot(
+        raw_text=(
+            "PUBLICATIONS\n"
+            "1. Paper A at ACM 2024.\n"
+            "TECHNICAL SKILLS\nPython"
+        ),
+    )
+    latex = build_latex_document(profile, _sample_package(), original=original)
+    assert r"\color{Blue} Publications" in latex
+    assert "ACM 2024" in latex
+
+
 def test_generate_resume_pdf_from_package_returns_bytes():
     profile = CandidateProfile(name="Jane Doe", summary="Engineer")
     pdf_bytes, source = generate_resume_pdf_from_package(profile, _sample_package())

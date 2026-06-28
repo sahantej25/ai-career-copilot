@@ -37,6 +37,6 @@ async def generate_tailored_resume(
     )
     accent = style.accent_hex if style else "#10b981"
     pdf_bytes, latex_source = generate_resume_pdf_from_package(
-        profile, package, accent_hex=accent, latex_source=package.latex_source,
+        profile, package, original=original, accent_hex=accent, latex_source=package.latex_source,
     )
     return pdf_bytes, latex_source

@@ -1,4 +1,8 @@
-% Resume template preamble (reference: professional ATS LaTeX layout)
+%-------------------------
+% Resume in Latex
+% License : MIT
+%------------------------
+
 \documentclass[letterpaper,10pt, usenames, dvipsnames]{article}
 
 \usepackage{graphicx}
@@ -18,17 +22,21 @@
 \usepackage{multicol}
 \setlength{\multicolsep}{-3.0pt}
 \setlength{\columnsep}{-1pt}
+\input{glyphtounicode}
 \usepackage{xcolor}
 \usepackage{amsmath}
 \usepackage{ragged2e}
 \sectionfont{\color{cyan}}
+\usepackage[usenames, dvipsnames]{color}
 
+%-----------FONT OPTIONS----------
 \pagestyle{fancy}
-\fancyhf{}
+\fancyhf{} % clear all header and footer fields
 \fancyfoot{}
 \renewcommand{\headrulewidth}{0pt}
 \renewcommand{\footrulewidth}{0pt}
 
+% Adjust margins
 \addtolength{\oddsidemargin}{-0.6in}
 \addtolength{\evensidemargin}{-0.7in}
 \addtolength{\textwidth}{1.19in}
@@ -36,16 +44,20 @@
 \addtolength{\textheight}{1.4in}
 
 \urlstyle{same}
+
 \raggedbottom
 \raggedright
 \setlength{\tabcolsep}{0in}
 
+% Sections formatting
 \titleformat{\section}{
   \vspace{-4pt}\scshape\raggedright\Large\bfseries
 }{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
 
+% Ensure that generated pdf is machine readable/ATS parsable
 \pdfgentounicode=1
 
+% Custom commands for headings, subheadings, and items
 \newcommand{\resumeSubheading}[4]{
   \vspace{-2pt}\item
     \begin{tabular*}{1.0\textwidth}[t]{l@{\extracolsep{\fill}}r}

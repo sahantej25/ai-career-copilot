@@ -6,9 +6,16 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from models.schemas import CandidateProfile, ResumePreviewResponse, Skill, TailoredExperienceEntry
+from models.schemas import CandidateProfile, ResumePreviewResponse, ResumeSnapshot, Skill, TailoredExperienceEntry
 from services.guardrails.constants import MAX_EXPERIENCE_BULLETS, MAX_LATEX_SOURCE_CHARS
 from services.pdf_service import DEFAULT_SECTION_ORDER, generate_resume_pdf
+from services.resume_latex_parser import (
+    extract_certifications_text,
+    extract_credly_or_cert_link,
+    extract_linkedin_url,
+    extract_publications_items,
+    extract_scholar_url,
+)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "resume"
 _PREAMBLE = (_TEMPLATE_DIR / "preamble.tex").read_text(encoding="utf-8")
@@ -19,15 +26,15 @@ _LATEX_FORBIDDEN = re.compile(
 )
 
 _CATEGORY_LABELS = {
-    "programming": "Programming",
-    "framework": "Frameworks",
-    "database": "Databases",
-    "cloud": "Cloud",
-    "tool": "Tools",
+    "programming": "Programming \\& Big Data",
+    "framework": "ML Frameworks",
+    "database": "Programming \\& Big Data",
+    "cloud": "MLOps \\& Deployment",
+    "tool": "MLOps \\& Deployment",
     "soft-skill": "Soft Skills",
     "domain": "Domain Expertise",
-    "frontend": "Frontend",
-    "backend": "Backend",
+    "frontend": "ML Frameworks",
+    "backend": "Programming \\& Big Data",
     "general": "Technical Skills",
     "other": "Technical Skills",
 }
@@ -67,7 +74,7 @@ def _format_name_header(name: str) -> str:
     return rf"\textbf{{\Huge \scshape {display} }}"
 
 
-def _format_contact_line(profile: CandidateProfile) -> str:
+def _format_contact_line(profile: CandidateProfile, raw_text: str = "") -> str:
     parts: list[str] = []
     if profile.email:
         email = escape_latex(profile.email)
@@ -76,17 +83,24 @@ def _format_contact_line(profile: CandidateProfile) -> str:
         parts.append(escape_latex(profile.phone))
     if profile.location:
         parts.append(escape_latex(profile.location))
+
+    linkedin = extract_linkedin_url(raw_text)
+    if linkedin:
+        parts.append(rf"\href{{{escape_latex(linkedin)}}}{{Linkedin}}")
+    scholar = extract_scholar_url(raw_text)
+    if scholar:
+        parts.append(rf"\href{{{escape_latex(scholar)}}}{{Google Scholar}}")
+
     if not parts:
         return ""
     return " $|$ ".join(parts)
 
 
 def _section(title: str) -> str:
-    return rf"\section{{\color{{Blue}} {escape_latex(title)}}}"
+    return rf"\section{{\color{{Blue}} {title}}}"
 
 
 def _group_skills(profile: CandidateProfile, ordered_names: list[str]) -> list[tuple[str, list[str]]]:
-    """Group skills by category; preserve JD-prioritized order within each group."""
     by_name: dict[str, Skill] = {s.name.lower(): s for s in profile.skills}
     order_index = {n.lower(): i for i, n in enumerate(ordered_names)}
 
@@ -110,10 +124,27 @@ def _skills_block(profile: CandidateProfile, ordered_skills: list[str]) -> str:
     groups = _group_skills(profile, ordered_skills)
     if not groups:
         return ""
-    lines = [_section("Technical Skills"), r"\vspace{-2mm}"]
+    lines = [_section("Professional Summary").replace("Professional Summary", "Technical Skills"), r"\vspace{-2mm}"]
+    lines[0] = _section("Technical Skills")
     for label, names in groups:
         skill_text = ", ".join(escape_latex(n) for n in names)
-        lines.append(rf"• \textbf{{{escape_latex(label)}:}} {{{skill_text}}} \\")
+        lines.append(rf"• \textbf{{ {label}:}} {{{skill_text}}} \\")
+    lines.append(r"\vspace{-2mm}")
+    return "\n".join(lines) + "\n"
+
+
+def _publications_block(raw_text: str) -> str:
+    items = extract_publications_items(raw_text)
+    if not items:
+        return ""
+    lines = [_section("Publications"), r"\begin{enumerate}"]
+    for item in items:
+        if "\\textbf" in item or "\\href" in item:
+            lines.append(f"    \\item {item.strip()}")
+        else:
+            lines.append(f"    \\item {escape_latex(item)}")
+    lines.append(r"\end{enumerate}")
+    lines.append(r"\vspace{-2mm}")
     return "\n".join(lines) + "\n"
 
 
@@ -126,7 +157,7 @@ def _experience_block(
     location = escape_latex(profile.location) if profile.location else ""
     lines = [_section("Experience"), r"\vspace{-2mm}"]
 
-    for exp in entries:
+    for idx, exp in enumerate(entries):
         role = escape_latex(exp.role)
         company = escape_latex(exp.company)
         duration = escape_latex(exp.duration)
@@ -140,9 +171,19 @@ def _experience_block(
                 lines.append(f"    \\item {escape_latex(bullet.strip())}")
                 lines.append("")
         lines.append(r"\end{itemize}")
-        lines.append(r"\vspace{2mm}")
+        spacing = r"\vspace{-2mm}" if idx == len(entries) - 1 else r"\vspace{2mm}"
+        lines.append(spacing)
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
+
+
+def _project_bullets(description: str) -> list[str]:
+    if not description.strip():
+        return []
+    if "\n" in description:
+        return [ln.strip() for ln in description.splitlines() if ln.strip()]
+    parts = re.split(r"(?<=[.!?])\s+", description.strip())
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _projects_block(
@@ -162,45 +203,77 @@ def _projects_block(
         title = escape_latex(proj.name)
         tech_part = rf" $|$ \textit{{Tech Stack: {escape_latex(tech)}}}" if tech else ""
         lines.append(rf"\textbf{{{title}}}{tech_part}")
-        lines.append(r"\begin{itemize}")
-        lines.append(r"\justifying")
-        if proj.description:
-            for chunk in proj.description.split("\n"):
-                chunk = chunk.strip()
-                if chunk:
-                    lines.append(f"\\item {escape_latex(chunk)}")
-        lines.append(r"\end{itemize}")
+        bullets = _project_bullets(proj.description)
+        if bullets:
+            lines.append(r"\begin{itemize}")
+            lines.append(r"\justifying")
+            for bullet in bullets:
+                lines.append(f"\\item {escape_latex(bullet)}")
+            lines.append(r"\end{itemize}")
         lines.append(r"\vspace{2mm}")
-    return "\n".join(lines)
+    lines.append(r"\vspace{-2mm}")
+    return "\n".join(lines) + "\n"
+
+
+def _parse_education_fields(edu) -> tuple[str, str, str, str]:
+    """Return institution, right_header, degree, footer for resumeSubheading."""
+    institution = escape_latex(edu.institution)
+    degree = escape_latex(edu.degree)
+    year = (edu.year or "").strip()
+    gpa_match = re.search(r"gpa\s*:?\s*[\d./]+", year, re.IGNORECASE)
+    if gpa_match:
+        return institution, "", degree, escape_latex(gpa_match.group(0))
+    if re.search(r"\b\d{4}\b", year):
+        return institution, rf"\hfill \bf {escape_latex(year)}", degree, ""
+    if year:
+        return institution, rf"\hfill \bf {escape_latex(year)}", degree, ""
+    return institution, "", degree, ""
 
 
 def _education_block(profile: CandidateProfile) -> str:
     if not profile.education:
         return ""
-    lines = [_section("Education "), r"\resumeSubHeadingListStart"]
+    lines = [_section("Education "), r"  \resumeSubHeadingListStart"]
     for edu in profile.education:
-        institution = escape_latex(edu.institution)
-        degree = escape_latex(edu.degree)
-        year = escape_latex(edu.year)
+        inst, right, degree, footer = _parse_education_fields(edu)
         lines.append(r"    \resumeSubheading")
-        lines.append(rf"      {{{institution}}}{{\hfill \bf {year}}}")
-        lines.append(rf"      {{{degree}}}{{}}")
+        lines.append(rf"      {{{inst}}}{{{right}}}")
+        lines.append(rf"      {{{degree}}}{{{footer}}}")
     lines.append(r"  \resumeSubHeadingListEnd")
     lines.append(r"\vspace{-2mm}")
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
+
+
+def _certifications_block(raw_text: str) -> str:
+    block = extract_certifications_text(raw_text)
+    if not block.strip():
+        return ""
+    link = extract_credly_or_cert_link(raw_text, block)
+    title = re.sub(r"https?://\S+", "", block)
+    title = re.sub(r"\blink\b", "", title, flags=re.IGNORECASE).strip(" .")
+    if not title:
+        title = block.strip()
+    lines = [_section("Certifications ")]
+    if link:
+        safe_link = escape_latex(link)
+        link_part = (
+            r"{\href{" + safe_link + r"}{\hspace{0.1mm} \color{Blue} \textbf{Link}}}"
+        )
+        lines.append(r"{" + escape_latex(title) + r"} " + link_part)
+    else:
+        lines.append(f"{{{escape_latex(title)}}}")
+    return "\n".join(lines) + "\n"
 
 
 def build_latex_document(
     profile: CandidateProfile,
     package: ResumePreviewResponse,
     *,
+    original: Optional[ResumeSnapshot] = None,
     accent_hex: str = "#10b981",  # noqa: ARG001 — kept for API compatibility
 ) -> str:
     """Build a complete LaTeX document matching the reference resume template."""
-    order = [s for s in (package.section_order or DEFAULT_SECTION_ORDER) if s in DEFAULT_SECTION_ORDER]
-    for sec in DEFAULT_SECTION_ORDER:
-        if sec not in order:
-            order.append(sec)
+    raw_text = original.raw_text if original else ""
 
     entries = package.tailored_experience
     if not entries and profile.experience:
@@ -217,37 +290,54 @@ def build_latex_document(
     summary = package.tailored_summary or profile.summary
     body_parts: list[str] = [
         r"\begin{document}",
+        r"",
         r"\begin{center}",
         f"    {_format_name_header(profile.name)} \\\\ \\vspace{{1pt}}",
     ]
-    contact = _format_contact_line(profile)
+    contact = _format_contact_line(profile, raw_text)
     if contact:
         body_parts.append(f"    {contact}")
     body_parts.append(r"\end{center}")
+    body_parts.append("")
 
-    section_builders = {
-        "summary": lambda: (
-            _section("Professional Summary")
-            + "\n\\setlist{nolistsep}\n\\justifying\n\\vspace{1mm}\n"
-            + escape_latex(summary)
-            + "\n\\vspace{-2mm}\n"
-            if summary
-            else ""
-        ),
-        "skills": lambda: _skills_block(profile, package.ordered_skills),
-        "experience": lambda: _experience_block(profile, entries),
-        "projects": lambda: _projects_block(profile, package.highlighted_projects or []),
-        "education": lambda: _education_block(profile),
-    }
+    if summary:
+        body_parts.extend([
+            _section("Professional Summary"),
+            r"\setlist{nolistsep}",
+            r"\justifying",
+            r"\vspace{1mm}",
+            escape_latex(summary),
+            r"\vspace{-2mm}",
+            "",
+        ])
 
-    for sec in order:
-        block = section_builders[sec]()
-        if block:
-            body_parts.append(block)
+    pubs = _publications_block(raw_text)
+    if pubs:
+        body_parts.append(pubs)
+
+    skills = _skills_block(profile, package.ordered_skills)
+    if skills:
+        body_parts.append(skills)
+
+    exp = _experience_block(profile, entries)
+    if exp:
+        body_parts.append(exp)
+
+    projs = _projects_block(profile, package.highlighted_projects or [])
+    if projs:
+        body_parts.append(projs)
+
+    edu = _education_block(profile)
+    if edu:
+        body_parts.append(edu)
+
+    certs = _certifications_block(raw_text)
+    if certs:
+        body_parts.append(certs)
 
     body_parts.append(r"\end{document}")
     body = "\n".join(body_parts)
-    return sanitize_latex_source(_PREAMBLE + "\n\n" + body)
+    return sanitize_latex_source(_PREAMBLE + "\n\n%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n" + body)
 
 
 def pylatex_compiler_available() -> bool:
@@ -272,8 +362,6 @@ def compile_latex_to_pdf(latex_source: str, *, timeout: int = 60) -> bytes:
     source_holder = {"tex": safe_source}
 
     class _TemplateDocument(Document):
-        """PyLaTeX document that compiles pre-rendered .tex source."""
-
         def generate_tex_file(self, filepath: str | None = None) -> None:
             path = filepath or self.filepath
             Path(path).write_text(source_holder["tex"], encoding="utf-8")
@@ -305,12 +393,13 @@ def generate_resume_pdf_from_package(
     profile: CandidateProfile,
     package: ResumePreviewResponse,
     *,
+    original: Optional[ResumeSnapshot] = None,
     accent_hex: str = "#10b981",
     latex_source: Optional[str] = None,
 ) -> tuple[bytes, str]:
     """Generate PDF from LaTeX via PyLaTeX; fall back to ReportLab if compile unavailable."""
     source = latex_source or package.latex_source or build_latex_document(
-        profile, package, accent_hex=accent_hex,
+        profile, package, original=original, accent_hex=accent_hex,
     )
     source = sanitize_latex_source(source)
 
