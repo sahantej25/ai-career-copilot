@@ -1,6 +1,6 @@
-import { HTMLAttributes } from "react";
+import { HTMLAttributes, useEffect, useState } from "react";
 import { cn, getMatchBg } from "@/lib/utils";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 
 interface ProgressProps extends HTMLAttributes<HTMLDivElement> {
   value: number;
@@ -10,7 +10,7 @@ interface ProgressProps extends HTMLAttributes<HTMLDivElement> {
   size?: "sm" | "md" | "lg";
 }
 
-const sizeMap = { sm: "h-1.5", md: "h-2.5", lg: "h-4" };
+const sizeMap = { sm: "h-1.5", md: "h-2.5", lg: "h-3.5" };
 
 export function Progress({
   value,
@@ -25,25 +25,23 @@ export function Progress({
     ? color
     : colorByValue
     ? getMatchBg(value)
-    : "bg-gradient-to-r from-indigo-500 to-purple-500";
+    : "bg-gradient-to-r from-brand-500 via-teal-500 to-sky-400";
 
   return (
     <div className={cn("w-full", className)} {...props}>
-      <div
-        className={cn(
-          "w-full bg-slate-800/80 rounded-full overflow-hidden",
-          sizeMap[size]
-        )}
-      >
+      <div className={cn("relative w-full bg-slate-200/70 rounded-full overflow-hidden", sizeMap[size])}>
         <motion.div
-          className={cn("h-full rounded-full", barColor)}
+          className={cn("relative h-full rounded-full", barColor)}
           initial={{ width: 0 }}
           animate={{ width: `${Math.min(100, Math.max(0, value))}%` }}
-          transition={{ duration: 1, ease: "easeOut" }}
-        />
+          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+        >
+          {/* moving sheen */}
+          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent bg-[length:200%_100%] animate-shimmer rounded-full" />
+        </motion.div>
       </div>
       {showLabel && (
-        <span className="text-xs text-slate-400 mt-1 block text-right">
+        <span className="text-xs text-ink-500 mt-1 block text-right tabular-nums">
           {value.toFixed(0)}%
         </span>
       )}
@@ -62,22 +60,28 @@ export function AnimatedCounter({
   value,
   suffix = "",
   className,
+  duration = 1.4,
 }: AnimatedCounterProps) {
+  const count = useMotionValue(0);
+  const rounded = useTransform(count, (latest) => Math.round(latest).toString());
+  const [display, setDisplay] = useState("0");
+
+  useEffect(() => {
+    const controls = animate(count, value, {
+      duration,
+      ease: [0.16, 1, 0.3, 1],
+    });
+    const unsub = rounded.on("change", (v) => setDisplay(v));
+    return () => {
+      controls.stop();
+      unsub();
+    };
+  }, [value, duration, count, rounded]);
+
   return (
-    <motion.span
-      className={className}
-      initial={{ opacity: 0, scale: 0.5 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: "spring", stiffness: 200, damping: 15 }}
-    >
-      <motion.span
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        key={value}
-      >
-        {value.toFixed(0)}
-      </motion.span>
+    <span className={cn("tabular-nums", className)}>
+      {display}
       {suffix}
-    </motion.span>
+    </span>
   );
 }

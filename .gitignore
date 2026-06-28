@@ -27,6 +27,12 @@ Thumbs.db
 
 # Data (keep data.json but ignore any local overrides)
 backend/data/data.local.json
+backend/data/users/
+backend/.env
+
+# Test artifacts
+backend/.pytest_cache/
+frontend/node_modules/.vite/
 
 # Logs
 *.log

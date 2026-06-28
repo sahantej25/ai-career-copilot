@@ -1,12 +1,19 @@
 import { HTMLAttributes, forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  interactive?: boolean;
+  glow?: boolean;
+}
+
+export const Card = forwardRef<HTMLDivElement, CardProps>(
+  ({ className, interactive = false, glow = false, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "glass-card p-5 shadow-xl shadow-black/20",
+        "glass glass-edge p-5 sm:p-6",
+        interactive && "glass-hover hover:-translate-y-0.5",
+        glow && "shadow-glow",
         className
       )}
       {...props}
@@ -17,7 +24,7 @@ Card.displayName = "Card";
 
 export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("mb-4", className)} {...props} />
+    <div ref={ref} className={cn("mb-5", className)} {...props} />
   )
 );
 CardHeader.displayName = "CardHeader";
@@ -26,7 +33,7 @@ export const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadi
   ({ className, ...props }, ref) => (
     <h3
       ref={ref}
-      className={cn("text-lg font-bold text-slate-100", className)}
+      className={cn("font-display text-lg font-semibold tracking-tight text-ink-900", className)}
       {...props}
     />
   )
