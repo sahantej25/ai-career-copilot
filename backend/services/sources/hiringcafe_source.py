@@ -26,7 +26,7 @@ BROWSER_HEADERS = {
 }
 
 
-def _default_search_state(search: str, location: str = "") -> dict:
+def _default_search_state(search: str, location: str = "", days: int = 14) -> dict:
     locations: list[dict] = []
     loc = (location or "").strip()
     if loc:
@@ -34,7 +34,7 @@ def _default_search_state(search: str, location: str = "") -> dict:
     return {
         "jobTitleQuery": search.strip(),
         "searchQuery": search.strip(),
-        "dateFetchedPastNDays": 14,
+        "dateFetchedPastNDays": max(1, min(days, 30)),
         "workplaceTypes": ["Remote", "Hybrid", "Onsite"],
         "seniorityLevel": ["No Prior Experience Required", "Entry Level", "Mid Level", "Senior Level"],
         "commitmentTypes": ["Full Time", "Part Time", "Contract", "Internship"],
@@ -100,8 +100,8 @@ def hiringcafe_search_url(search: str) -> str:
     return f"{HC_SITE}/?q={q}"
 
 
-async def _try_api(client: httpx.AsyncClient, search: str, limit: int, location: str = "") -> list[JobListing]:
-    body = {"size": min(limit, 40), "page": 0, "searchState": _default_search_state(search, location)}
+async def _try_api(client: httpx.AsyncClient, search: str, limit: int, location: str = "", days: int = 14) -> list[JobListing]:
+    body = {"size": min(limit, 40), "page": 0, "searchState": _default_search_state(search, location, days)}
     resp = await client.post(HC_SEARCH_API, json=body, headers=BROWSER_HEADERS)
     if resp.status_code != 200:
         return []
@@ -134,8 +134,9 @@ async def fetch_hiringcafe_jobs(
     search: str,
     limit: int,
     location: str = "",
+    days: int = 14,
 ) -> list[JobListing]:
-    jobs = await _try_api(client, search, limit, location)
+    jobs = await _try_api(client, search, limit, location, days)
     if jobs:
         return jobs
     jobs = await _try_next_data(client, search, limit)
