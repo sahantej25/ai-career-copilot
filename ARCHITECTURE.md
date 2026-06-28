@@ -42,7 +42,7 @@ Apply to jobs → Matching Pipeline scores fit vs JD (step-by-step)
        ↓
 Generate resume → Multi-agent Resume Pipeline tailors content to JD + ATS (structure preserved)
        ↓
-Export → LaTeX source → pdflatex PDF (ReportLab fallback) · structured DOCX
+Export → Reference LaTeX template → PyLaTeX PDF compile (ReportLab fallback)
        ↓
 Rejection → Learning Agent adjusts skill confidence + recommendations
        ↓
@@ -137,15 +137,15 @@ Step 3 — Score & recommend
          ┌─────────────────────────────────────────────────────────────┐
          │ STEP 4 — Structured package + document build                │
          │ ResumePreviewResponse (Pydantic) + latex_source string        │
-         │ → latex_service.build_latex_document() (deterministic .tex)   │
+         │ → templates/resume/preamble.tex + build_latex_document()      │
          └─────────────────────────────┬───────────────────────────────┘
                                        │
-              ┌────────────────────────┴────────────────────────┐
-              ▼                                                 ▼
-   compile_latex_to_pdf()                              generate_docx_from_package()
-   subprocess → pdflatex                               python-docx
-   (ReportLab fallback if pdflatex missing)            structured .docx
+                                       ▼
+                    compile_latex_to_pdf() via PyLaTeX + pdflatex
+                    (ReportLab fallback if compile unavailable)
 ```
+
+Reference layout matches the professional ATS LaTeX template (letterpaper, `\color{Blue}` sections, `\scshape` name header, categorized skills, experience itemize with `\justifying`). See `Resume-Latex-ref/Pavankumar_Resume.pdf` for expected output.
 
 #### Structured output contract
 
@@ -167,17 +167,15 @@ Step 3 — Score & recommend
 
 | Format | Module | Mechanism |
 |--------|--------|-----------|
-| **LaTeX source** | `latex_service.py` | Deterministic string builder (`build_latex_document`) — escapes special chars, respects `section_order` |
-| **PDF** | `latex_service.py` | Python **`subprocess`** invokes system **`pdflatex`** (TeX Live / MacTeX). **Not** a Python LaTeX wrapper library (no `pylatex`, `latexmk` Python binding). Runs twice in a temp dir for stable output. |
-| **PDF fallback** | `pdf_service.py` | **ReportLab** when `pdflatex` is missing or compile fails |
-| **DOCX** | `docx_service.py` | **python-docx** — headings, bullets, section order mirrored from package |
+| **LaTeX source** | `latex_service.py` + `templates/resume/preamble.tex` | Reference-template builder — escapes special chars, respects `section_order` |
+| **PDF** | `latex_service.py` | **PyLaTeX** (`Document.generate_pdf`) compiles via system **`pdflatex`** |
+| **PDF fallback** | `pdf_service.py` | **ReportLab** when PyLaTeX/pdflatex unavailable or compile fails |
 
 **Endpoints:**
 - `POST /api/apply/resume-preview` — JSON preview (+ `match_context`, `latex_source`)
-- `POST /api/apply/generate-resume` — PDF (LaTeX compile preferred)
-- `POST /api/apply/generate-resume/docx` — structured Word document
+- `POST /api/apply/generate-resume` — PDF (PyLaTeX + pdflatex preferred)
 
-**Wrappers:** `resume_agent.py` orchestrates pipeline → `generate_resume_pdf_from_package()` / `generate_docx_from_package()`.
+**Wrappers:** `resume_agent.py` orchestrates pipeline → `generate_resume_pdf_from_package()`.
 
 ### 3.4 Agent 4 — Learning & Insights (`learning_agent.py`)
 
@@ -201,9 +199,8 @@ Step 3 — Score & recommend
                       └─ Multi-agent tailoring pipeline (structure + ATS + per-role)
                       └─ UI: section order, ATS keywords, tailoring steps, latex_source
 6. Download PDF       POST /api/apply/generate-resume (+ match_context)
-                      └─ LaTeX → pdflatex (ReportLab fallback)
-7. Download DOCX      POST /api/apply/generate-resume/docx
-8. Submit application POST /api/apply/submit → tracking pipeline
+                      └─ Reference LaTeX → PyLaTeX + pdflatex (ReportLab fallback)
+7. Submit application POST /api/apply/submit → tracking pipeline
 ```
 
 ---
@@ -299,8 +296,8 @@ ai-career-copilot/
     ├── services/
     │   ├── guardrails/                    # Input/output/policy/rate limits
     │   ├── openai_service.py              # LLM gateway (JSON structured output)
-    │   ├── latex_service.py               # LaTeX builder + pdflatex subprocess
-    │   ├── docx_service.py                # python-docx structured export
+    │   ├── latex_service.py               # Reference LaTeX + PyLaTeX PDF compile
+    │   ├── templates/resume/preamble.tex  # Professional ATS LaTeX preamble
     │   ├── pdf_service.py                 # ReportLab PDF fallback
     │   ├── job_feed_service.py         # Multi-source job aggregation
     │   └── job_recency.py              # Posted-within filtering

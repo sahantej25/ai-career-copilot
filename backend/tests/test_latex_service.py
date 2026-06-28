@@ -1,5 +1,5 @@
-"""Tests for LaTeX resume builder and sanitizer."""
-from models.schemas import CandidateProfile, Experience, ResumePreviewResponse, TailoredExperienceEntry
+"""Tests for LaTeX resume builder and PyLaTeX compiler."""
+from models.schemas import CandidateProfile, Experience, ResumePreviewResponse, Skill, TailoredExperienceEntry
 from services.latex_service import (
     build_latex_document,
     compile_latex_to_pdf,
@@ -32,15 +32,20 @@ def test_escape_latex_special_chars():
 
 
 def test_sanitize_latex_strips_dangerous_commands():
-    dirty = r"\documentclass{article}\input{/etc/passwd}"
+    dirty = r"\documentclass{article}\write18{evil}"
     cleaned = sanitize_latex_source(dirty)
-    assert r"\input" not in cleaned
+    assert r"\write18" not in cleaned
 
 
-def test_build_latex_document_includes_sections():
+def test_build_latex_document_uses_reference_template():
     profile = CandidateProfile(
         name="Jane Doe",
         email="jane@example.com",
+        location="Austin, TX",
+        skills=[
+            Skill(name="React", confidence=90, category="frontend"),
+            Skill(name="Python", confidence=85, category="programming"),
+        ],
         experience=[
             Experience(
                 company="Acme",
@@ -51,9 +56,11 @@ def test_build_latex_document_includes_sections():
         ],
     )
     latex = build_latex_document(profile, _sample_package())
-    assert r"\documentclass" in latex
-    assert "Jane Doe" in latex
-    assert "Professional Summary" in latex
+    assert r"\documentclass[letterpaper,10pt" in latex
+    assert r"\scshape JANE DOE" in latex
+    assert r"\color{Blue} Professional Summary" in latex
+    assert r"\color{Blue} Technical Skills" in latex
+    assert r"\color{Blue} Experience" in latex
     assert "Built dashboards" in latex
     assert r"\end{document}" in latex
 
@@ -65,9 +72,9 @@ def test_generate_resume_pdf_from_package_returns_bytes():
     assert r"\documentclass" in source
 
 
-def test_compile_latex_skips_when_unavailable(monkeypatch):
-    monkeypatch.setattr("services.latex_service.latex_compiler_available", lambda: False)
+def test_compile_latex_raises_when_pylatex_unavailable(monkeypatch):
+    monkeypatch.setattr("services.latex_service.pylatex_compiler_available", lambda: False)
     import pytest
 
-    with pytest.raises(RuntimeError, match="pdflatex"):
+    with pytest.raises(RuntimeError, match="PyLaTeX"):
         compile_latex_to_pdf(r"\documentclass{article}\begin{document}Hi\end{document}")

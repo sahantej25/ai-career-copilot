@@ -10,7 +10,7 @@ from models.schemas import (
 )
 from agents.profile_agent import parse_resume, extract_resume_style, extract_text
 from agents.job_matching_agent import match_job
-from agents.resume_agent import generate_tailored_resume, generate_tailored_docx, build_resume_package
+from agents.resume_agent import generate_tailored_resume, build_resume_package
 from services.guardrails.files import validate_upload_file
 from services.guardrails.constants import MAX_RESUME_TEXT_CHARS
 from agents.resume_structure_agents import infer_section_order_heuristic
@@ -167,30 +167,6 @@ async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_r
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.post("/generate-resume/docx", dependencies=[Depends(ai_guard)])
-async def generate_resume_docx(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
-    try:
-        docx_bytes = await generate_tailored_docx(
-            data.current_profile_state,
-            req.job_description,
-            data.resume_style,
-            match=req.match_context,
-            original=data.original_resume,
-        )
-    except AIConfigurationError:
-        raise HTTPException(503, "AI resume generation requires OPENAI_API_KEY to be configured.")
-    except Exception as e:
-        raise HTTPException(500, f"DOCX generation failed: {e}")
-
-    safe = (req.company or "tailored").replace(" ", "_")[:80]
-    filename = f"resume_{safe}.docx"
-    return Response(
-        content=docx_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
