@@ -16,6 +16,18 @@ from services.auth_service import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+@router.get("/providers")
+async def auth_providers():
+    """Tell the frontend which sign-in methods are available (no secrets)."""
+    from config import settings
+
+    google = bool((settings.google_client_id or "").strip())
+    return {
+        "email_password": True,
+        "google": google,
+    }
+
+
 @router.post("/register", response_model=AuthResponse)
 async def register(req: RegisterRequest):
     try:
@@ -38,6 +50,13 @@ async def login(req: LoginRequest):
 
 @router.post("/google", response_model=AuthResponse)
 async def google_login(req: GoogleAuthRequest):
+    from config import settings
+
+    if not (settings.google_client_id or "").strip():
+        raise HTTPException(
+            503,
+            "Google sign-in is not configured. Use email and password, or ask your admin to set GOOGLE_CLIENT_ID.",
+        )
     try:
         user = authenticate_google_user(req.credential)
     except ValueError as e:
