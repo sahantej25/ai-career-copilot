@@ -8,6 +8,7 @@ from config import settings
 from models.schemas import JobListing
 from services.job_sanitize import sanitize_job_listing
 from services.job_recency import filter_jobs_by_recency, posted_within_to_days
+from services.location_filter import job_matches_location
 from services.sources.greenhouse_source import fetch_greenhouse_jobs
 from services.sources.hiringcafe_source import fetch_hiringcafe_jobs
 from services.sources.linkedin_source import fetch_linkedin_jobs

@@ -23,7 +23,7 @@ def build_profile_context(profile: CandidateProfile, *, include_confidence: bool
         lines.append("Work experience:")
         for exp in profile.experience:
             lines.append(f"  • {exp.role} at {exp.company} ({exp.duration})")
-            for bullet in exp.description[:6]:
+            for bullet in exp.description[:10]:
                 if bullet.strip():
                     lines.append(f"      - {bullet.strip()}")
 
