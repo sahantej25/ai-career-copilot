@@ -191,6 +191,8 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  auth_provider?: "local" | "google" | "linked";
+  picture?: string;
 }
 
 export interface AuthResponse {
