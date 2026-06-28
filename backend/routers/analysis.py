@@ -2,17 +2,19 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 
 from deps.auth import bind_user_context
+from deps.guardrails import ai_guard
 from models.schemas import (
     AnalyzeRejectionRequest, AnalyzeRejectionResponse,
-    RejectionNote, GlobalAnalysis, AppData,
+    RejectionNote, GlobalAnalysis, ApplicationStatus,
 )
 from agents.learning_agent import analyze_rejection, build_global_analysis
 from services import storage_service as store
+from services.openai_service import AIConfigurationError
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"], dependencies=[Depends(bind_user_context)])
 
 
-@router.post("/rejection/analyze", response_model=AnalyzeRejectionResponse)
+@router.post("/rejection/analyze", response_model=AnalyzeRejectionResponse, dependencies=[Depends(ai_guard)])
 async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
     data = await store.load_data()
 
@@ -22,6 +24,16 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
     app = next((a for a in data.applications if a.id == req.application_id), None)
     if not app:
         raise HTTPException(404, f"Application {req.application_id} not found.")
+
+    if not any([
+        req.notes.strip(),
+        req.interview_experience.strip(),
+        req.rejection_email.strip(),
+        req.topics_struggled.strip(),
+        req.missing_skills.strip(),
+        req.recruiter_feedback.strip(),
+    ]):
+        raise HTTPException(400, "Provide at least one rejection detail field to analyze.")
 
     rejection = RejectionNote(
         application_id=req.application_id,
@@ -38,19 +50,19 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
         profile_update, updated_profile, summary = await analyze_rejection(
             data.current_profile_state, rejection, app
         )
+    except AIConfigurationError:
+        raise HTTPException(503, "AI rejection analysis requires OPENAI_API_KEY to be configured.")
     except Exception as e:
         raise HTTPException(500, f"Rejection analysis failed: {e}")
 
     rejection.summary = summary
 
-    # Persist: updated profile + rejection note + profile update
     data.current_profile_state = updated_profile
     await store.save_data(data)
     await store.upsert_rejection(rejection)
     await store.add_profile_update(profile_update)
 
-    # Ensure the application is marked not_selected
-    app.status = "not_selected"
+    app.status = ApplicationStatus.not_selected
     app.updated_at = datetime.utcnow().isoformat() + "Z"
     await store.upsert_application(app)
 
@@ -79,13 +91,15 @@ async def get_global_analysis():
     raise HTTPException(404, "No global analysis yet. Refresh to generate.")
 
 
-@router.post("/global/refresh", response_model=GlobalAnalysis)
+@router.post("/global/refresh", response_model=GlobalAnalysis, dependencies=[Depends(ai_guard)])
 async def refresh_global_analysis():
     data = await store.load_data()
     if not data.rejections:
         raise HTTPException(400, "No rejections to analyze yet.")
     try:
         analysis = await build_global_analysis(data)
+    except AIConfigurationError:
+        raise HTTPException(503, "AI global analysis requires OPENAI_API_KEY to be configured.")
     except Exception as e:
         raise HTTPException(500, f"Global analysis failed: {e}")
     await store.update_global_analysis(analysis)
@@ -96,9 +110,3 @@ async def refresh_global_analysis():
 async def get_profile_history():
     data = await store.load_data()
     return {"history": data.profile_update_history}
-
-
-@router.get("/data")
-async def get_all_data():
-    """Return the entire data.json for debugging / export."""
-    return await store.load_data()

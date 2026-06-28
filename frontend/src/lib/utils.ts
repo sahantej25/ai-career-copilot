@@ -101,7 +101,23 @@ export function getMatchBg(pct: number): string {
   return "bg-rose-500";
 }
 
-/** Strip HTML tags/entities for safe plain-text job previews. */
+/** Guardrail limits — keep in sync with backend/services/guardrails/constants.py */
+export const INPUT_LIMITS = {
+  jobDescription: 32_000,
+  companyRole: 200,
+  notes: 4_000,
+  rejectionField: 8_000,
+  searchQuery: 200,
+} as const;
+
+/** Truncate user input to a safe max length before API calls. */
+export function clampInput(text: string, maxLen: number): string {
+  const trimmed = (text || "").replace(/\s+/g, " ").trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return trimmed.slice(0, maxLen).trim();
+}
+
+/** Strip HTML tags and entities from pasted content. */
 export function stripHtml(text: string): string {
   if (!text) return "";
   const decoded = text
@@ -113,6 +129,12 @@ export function stripHtml(text: string): string {
     .replace(/&#39;/gi, "'");
   const noTags = decoded.replace(/<[^>]+>/g, " ");
   return noTags.replace(/\s+/g, " ").trim();
+}
+
+/** Strip HTML tags from pasted job descriptions before sending to API. */
+export function sanitizeUserInput(text: string, maxLen: number): string {
+  const plain = stripHtml(text);
+  return clampInput(plain, maxLen);
 }
 
 export function jobPreviewText(job: { excerpt?: string; description?: string }, maxLen = 220): string {

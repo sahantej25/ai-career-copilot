@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from config import settings
+from middleware.security import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from routers import apply, tracking, analysis, data, jobs, auth
 
 app = FastAPI(
@@ -13,6 +13,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# ── Security headers ─────────────────────────────────────────────────────────
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(MaxBodySizeMiddleware)
 
 # ── CORS ────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -34,7 +38,11 @@ app.include_router(jobs.router)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "ai_enabled": bool((settings.openai_api_key or "").strip()),
+    }
 
 
 # Ensure data directory exists on startup
