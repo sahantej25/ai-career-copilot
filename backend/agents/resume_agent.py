@@ -1,5 +1,5 @@
 """Agent 3 – Resume Generation Agent
-Step-by-step pipeline: plan tailoring → rewrite experience → produce PDF package.
+Multi-agent pipeline → LaTeX source → PDF (pdflatex) or DOCX export.
 """
 from typing import Optional
 
@@ -7,10 +7,12 @@ from models.schemas import (
     CandidateProfile,
     MatchContextInput,
     ResumePreviewResponse,
+    ResumeSnapshot,
     ResumeStyle,
 )
 from agents.resume_pipeline import run_resume_pipeline
-from services.pdf_service import generate_resume_pdf
+from services.docx_service import generate_docx_from_package
+from services.latex_service import generate_resume_pdf_from_package
 
 
 async def build_resume_package(
@@ -18,8 +20,9 @@ async def build_resume_package(
     job_description: str,
     style: Optional[ResumeStyle] = None,
     match: Optional[MatchContextInput] = None,
+    original: Optional[ResumeSnapshot] = None,
 ) -> ResumePreviewResponse:
-    return await run_resume_pipeline(profile, job_description, style, match)
+    return await run_resume_pipeline(profile, job_description, style, match, original)
 
 
 async def generate_tailored_resume(
@@ -27,14 +30,28 @@ async def generate_tailored_resume(
     job_description: str,
     style: Optional[ResumeStyle] = None,
     match: Optional[MatchContextInput] = None,
-) -> bytes:
-    package = await build_resume_package(profile, job_description, style, match)
-    return generate_resume_pdf(
-        profile,
-        package.tailored_summary,
-        package.ordered_skills,
-        highlighted_projects=package.highlighted_projects,
-        tailored_experience=package.tailored_experience,
-        section_order=style.section_order if style else None,
-        accent_hex=style.accent_hex if style else "#10b981",
+    original: Optional[ResumeSnapshot] = None,
+) -> tuple[bytes, str]:
+    """Return (pdf_bytes, latex_source)."""
+    package = await build_resume_package(
+        profile, job_description, style, match, original,
     )
+    accent = style.accent_hex if style else "#10b981"
+    pdf_bytes, latex_source = generate_resume_pdf_from_package(
+        profile, package, accent_hex=accent, latex_source=package.latex_source,
+    )
+    return pdf_bytes, latex_source
+
+
+async def generate_tailored_docx(
+    profile: CandidateProfile,
+    job_description: str,
+    style: Optional[ResumeStyle] = None,
+    match: Optional[MatchContextInput] = None,
+    original: Optional[ResumeSnapshot] = None,
+) -> bytes:
+    package = await build_resume_package(
+        profile, job_description, style, match, original,
+    )
+    accent = style.accent_hex if style else "#10b981"
+    return generate_docx_from_package(profile, package, accent_hex=accent)

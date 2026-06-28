@@ -255,11 +255,33 @@ export function ApplyTab() {
       a.click();
       URL.revokeObjectURL(url);
       setResumeDownloaded(true);
-      addToast({ type: "success", message: "Tailored resume downloaded!" });
+      addToast({ type: "success", message: "Tailored PDF resume downloaded (LaTeX → PDF)!" });
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
     } finally {
       setLoading("generate", false);
+    }
+  };
+
+  const handleDownloadDocx = async () => {
+    setLoading("generateDocx", true);
+    const jd = sanitizeUserInput(currentJD, INPUT_LIMITS.jobDescription);
+    const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
+    const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
+    try {
+      const blob = await api.generateResumeDocx(jd, company, role, currentSkillsRequired, currentMatch);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `resume_${currentCompany.replace(/\s+/g, "_") || "tailored"}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setResumeDownloaded(true);
+      addToast({ type: "success", message: "Tailored DOCX resume downloaded!" });
+    } catch (e: any) {
+      addToast({ type: "error", message: e.message });
+    } finally {
+      setLoading("generateDocx", false);
     }
   };
 
@@ -630,6 +652,26 @@ export function ApplyTab() {
                     </div>
                   </div>
                 )}
+                {preview.section_order && preview.section_order.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">Preserved section structure</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preview.section_order.map((s) => (
+                        <Badge key={s} variant="default">{s}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {preview.ats_keywords && preview.ats_keywords.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">ATS keywords woven in</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preview.ats_keywords.slice(0, 12).map((k) => (
+                        <Badge key={k} variant="warning">{k}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {preview.highlighted_projects.length > 0 && (
                   <div>
                     <p className="section-label mb-2">Highlighted projects</p>
@@ -698,9 +740,13 @@ export function ApplyTab() {
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button onClick={handleDownloadResume} disabled={!canPrepare} loading={loading("generate")} className="flex-1">
+                  <Button onClick={handleDownloadResume} disabled={!canPrepare || loading("generateDocx")} loading={loading("generate")} className="flex-1">
                     <Download className="h-4 w-4" />
-                    {loading("generate") ? "Generating Resume..." : "Prepare & Download Resume"}
+                    {loading("generate") ? "Generating PDF..." : "Download PDF (LaTeX)"}
+                  </Button>
+                  <Button variant="secondary" onClick={handleDownloadDocx} disabled={!canPrepare || loading("generate")} loading={loading("generateDocx")} className="flex-1">
+                    <FileText className="h-4 w-4" />
+                    {loading("generateDocx") ? "Generating DOCX..." : "Download DOCX"}
                   </Button>
                   <Button variant={canSubmit ? "primary" : "secondary"} onClick={handleSubmit} disabled={!canSubmit} loading={loading("submit")} className="flex-1">
                     <CheckCircle2 className="h-4 w-4" /> Mark as Submitted

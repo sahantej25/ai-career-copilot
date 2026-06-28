@@ -229,6 +229,15 @@ class ResumeStyle(BaseModel):
     notes: str = ""
 
 
+class ResumeSnapshot(BaseModel):
+    """Raw uploaded resume preserved for structure-aware tailoring."""
+    raw_text: str = ""
+    filename: str = ""
+    section_order: list[str] = Field(default_factory=lambda: [
+        "summary", "skills", "experience", "projects", "education",
+    ])
+
+
 class JobPreferences(BaseModel):
     search_query: str = ""
     location: str = "United States"
@@ -273,6 +282,7 @@ class AppData(BaseModel):
     resume_style: Optional[ResumeStyle] = None
     reference_resume_loaded: bool = False
     reference_resume_name: str = ""
+    original_resume: Optional[ResumeSnapshot] = None
     job_preferences: JobPreferences = Field(default_factory=JobPreferences)
     cached_live_jobs: list["JobListing"] = []
     live_jobs_fetched_at: Optional[str] = None
@@ -379,6 +389,11 @@ class ResumePreviewResponse(BaseModel):
     emphasis: str = ""
     tailored_experience: list[TailoredExperienceEntry] = []
     tailoring_steps: list[MatchStep] = []
+    section_order: list[str] = Field(default_factory=lambda: [
+        "summary", "skills", "experience", "projects", "education",
+    ])
+    ats_keywords: list[str] = []
+    latex_source: str = ""
 
 
 class SubmitApplicationRequest(BaseModel):

@@ -6,11 +6,14 @@ from deps.guardrails import ai_guard
 from models.schemas import (
     MatchRequest, MatchResponse, GenerateResumeRequest, ResumePreviewResponse,
     SubmitApplicationRequest, Application, AppData, CandidateProfile, SaveProfileRequest,
+    ResumeSnapshot,
 )
-from agents.profile_agent import parse_resume, extract_resume_style
+from agents.profile_agent import parse_resume, extract_resume_style, extract_text
 from agents.job_matching_agent import match_job
-from agents.resume_agent import generate_tailored_resume, build_resume_package
+from agents.resume_agent import generate_tailored_resume, generate_tailored_docx, build_resume_package
 from services.guardrails.files import validate_upload_file
+from services.guardrails.constants import MAX_RESUME_TEXT_CHARS
+from agents.resume_structure_agents import infer_section_order_heuristic
 from services import storage_service as store
 from services.openai_service import AIConfigurationError
 
@@ -49,6 +52,7 @@ async def save_profile(req: SaveProfileRequest):
 async def clear_profile():
     data = await store.load_data()
     data.current_profile_state = None
+    data.original_resume = None
     await store.save_data(data)
     return {"message": "Candidate profile cleared."}
 
@@ -60,6 +64,7 @@ async def upload_profile(file: UploadFile = File(...)):
     validate_upload_file(file, content, _ALLOWED_EXT)
 
     try:
+        raw_text = extract_text(content, file.filename or "resume.pdf")
         profile = await parse_resume(content, file.filename or "resume.pdf")
     except AIConfigurationError:
         raise HTTPException(503, "AI profile parsing requires OPENAI_API_KEY to be configured.")
@@ -70,6 +75,11 @@ async def upload_profile(file: UploadFile = File(...)):
 
     data = await store.load_data()
     data.current_profile_state = profile
+    data.original_resume = ResumeSnapshot(
+        raw_text=raw_text[:MAX_RESUME_TEXT_CHARS],
+        filename=file.filename or "resume.pdf",
+        section_order=infer_section_order_heuristic(raw_text),
+    )
     await store.save_data(data)
     return {"message": "Profile parsed successfully", "profile": profile}
 
@@ -129,6 +139,7 @@ async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_re
             req.job_description,
             data.resume_style,
             match=req.match_context,
+            original=data.original_resume,
         )
     except AIConfigurationError:
         raise HTTPException(503, "AI resume preview requires OPENAI_API_KEY to be configured.")
@@ -139,11 +150,12 @@ async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_re
 @router.post("/generate-resume", dependencies=[Depends(ai_guard)])
 async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
     try:
-        pdf_bytes = await generate_tailored_resume(
+        pdf_bytes, _latex = await generate_tailored_resume(
             data.current_profile_state,
             req.job_description,
             data.resume_style,
             match=req.match_context,
+            original=data.original_resume,
         )
     except AIConfigurationError:
         raise HTTPException(503, "AI resume generation requires OPENAI_API_KEY to be configured.")
@@ -155,6 +167,30 @@ async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_r
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/generate-resume/docx", dependencies=[Depends(ai_guard)])
+async def generate_resume_docx(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
+    try:
+        docx_bytes = await generate_tailored_docx(
+            data.current_profile_state,
+            req.job_description,
+            data.resume_style,
+            match=req.match_context,
+            original=data.original_resume,
+        )
+    except AIConfigurationError:
+        raise HTTPException(503, "AI resume generation requires OPENAI_API_KEY to be configured.")
+    except Exception as e:
+        raise HTTPException(500, f"DOCX generation failed: {e}")
+
+    safe = (req.company or "tailored").replace(" ", "_")[:80]
+    filename = f"resume_{safe}.docx"
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
