@@ -2,10 +2,28 @@ import json
 import os
 from pathlib import Path
 
+# Tests must never use real secrets from backend/.env (gitignored, not in GitHub).
+# Force safe values before Settings() loads — env vars override .env in pydantic-settings.
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["JWT_SECRET"] = "pytest-test-jwt-secret-not-for-production"
+os.environ["GOOGLE_CLIENT_ID"] = ""
+
 import pytest
 from fastapi.testclient import TestClient
 
 from config import settings
+
+
+@pytest.fixture(autouse=True)
+def isolate_test_secrets(monkeypatch):
+    """Ensure no test reads OpenAI/Google/JWT secrets from a developer's local .env."""
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "jwt_secret", "pytest-test-jwt-secret-not-for-production")
+
+    import services.openai_service as openai_service
+
+    monkeypatch.setattr(openai_service, "_client", None)
 
 
 @pytest.fixture()

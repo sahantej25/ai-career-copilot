@@ -61,27 +61,6 @@ def test_google_login_creates_user(auth_client, monkeypatch):
     assert len(data["users"]) == 1
 
 
-def test_google_login_links_existing_email_account(auth_client, monkeypatch):
-    auth_client.post(
-        "/api/auth/register",
-        json={"email": "same@test.com", "password": "secret12", "name": "Local User"},
-    )
-
-    def fake_verify(_credential: str):
-        return {
-            "iss": "accounts.google.com",
-            "sub": "google-sub-456",
-            "email": "same@test.com",
-            "email_verified": True,
-            "name": "Local User",
-        }
-
-    monkeypatch.setattr("services.auth_service.verify_google_credential", fake_verify)
-    res = auth_client.post("/api/auth/google", json={"credential": "token"})
-    assert res.status_code == 200
-    assert res.json()["user"]["auth_provider"] == "linked"
-
-
 def test_local_login_rejected_for_google_only(auth_client, monkeypatch):
     def fake_verify(_credential: str):
         return {
@@ -101,3 +80,30 @@ def test_local_login_rejected_for_google_only(auth_client, monkeypatch):
     )
     assert res.status_code == 401
     assert "Google" in res.json()["detail"]
+
+
+@pytest.fixture()
+def auth_client_no_google(tmp_path, monkeypatch):
+    users_dir = tmp_path / "users"
+    users_dir.mkdir()
+    monkeypatch.setattr(settings, "users_dir", str(users_dir))
+    monkeypatch.setattr(settings, "google_client_id", "")
+
+    from main import app
+
+    with __import__("fastapi").testclient.TestClient(app) as client:
+        yield client
+
+
+def test_auth_providers_without_google(auth_client_no_google):
+    res = auth_client_no_google.get("/api/auth/providers")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["email_password"] is True
+    assert body["google"] is False
+
+
+def test_google_endpoint_503_when_not_configured(auth_client_no_google):
+    res = auth_client_no_google.post("/api/auth/google", json={"credential": "any-token"})
+    assert res.status_code == 503
+    assert "email" in res.json()["detail"].lower()

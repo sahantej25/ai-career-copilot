@@ -5,8 +5,6 @@ from pathlib import Path
 
 import bcrypt
 import jwt
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 
 from config import settings
 from models.schemas import UserPublic
@@ -77,8 +75,14 @@ def _to_public(user: dict) -> UserPublic:
 
 
 def verify_google_credential(credential: str) -> dict:
-    if not settings.google_client_id:
-        raise ValueError("Google sign-in is not configured on the server.")
+    if not (settings.google_client_id or "").strip():
+        raise ValueError(
+            "Google sign-in is not configured on the server. "
+            "Use email and password, or set GOOGLE_CLIENT_ID in backend/.env."
+        )
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+
     idinfo = id_token.verify_oauth2_token(
         credential,
         google_requests.Request(),
