@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
+
+// Tests must not depend on frontend/.env (gitignored, not in GitHub).
+vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "");
+vi.stubEnv("VITE_API_URL", "");
 
 const storage = new Map<string, string>();
 

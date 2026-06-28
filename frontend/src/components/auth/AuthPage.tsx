@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { GoogleLogin } from "@react-oauth/google";
 import { Brain, Mail, Lock, User, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { cn } from "@/lib/utils";
+import { GoogleSignInSection } from "@/components/auth/GoogleSignInSection";
 
 type Mode = "login" | "register";
 
-const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+/** Google is optional — email/password always works without any Google setup. */
+const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim());
 
 export function AuthPage() {
   const { login, register, loginWithGoogle } = useAuthStore();
@@ -38,7 +39,7 @@ export function AuthPage() {
 
   const handleGoogleSuccess = async (credential?: string) => {
     if (!credential) {
-      setError("Google sign-in did not return a credential.");
+      setError("Google sign-in was cancelled or failed.");
       return;
     }
     setError("");
@@ -69,7 +70,9 @@ export function AuthPage() {
           </div>
           <h1 className="font-display text-2xl font-bold text-ink-900">AI Career Copilot</h1>
           <p className="mt-2 text-sm text-ink-500">
-            Sign in with Google or create your account to access live jobs and professional application tracking.
+            {GOOGLE_ENABLED
+              ? "Sign in with Google or your email to access live jobs and track applications."
+              : "Create an account or sign in with your email and password — no Google setup required."}
           </p>
         </div>
 
@@ -90,33 +93,8 @@ export function AuthPage() {
             ))}
           </div>
 
-          {GOOGLE_ENABLED ? (
-            <div className="mb-6 space-y-4">
-              <div className="flex justify-center [&>div]:w-full">
-                <GoogleLogin
-                  onSuccess={(res) => handleGoogleSuccess(res.credential)}
-                  onError={() => setError("Google sign-in was cancelled or failed.")}
-                  theme="outline"
-                  size="large"
-                  width="360"
-                  text={mode === "login" ? "signin_with" : "signup_with"}
-                  shape="rectangular"
-                />
-              </div>
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white/80 px-3 text-ink-400">or continue with email</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-800">
-              Google sign-in: set <code className="font-mono">VITE_GOOGLE_CLIENT_ID</code> in{" "}
-              <code className="font-mono">frontend/.env</code> to enable one-click Gmail login.
-            </div>
+          {GOOGLE_ENABLED && (
+            <GoogleSignInSection mode={mode} onSuccess={handleGoogleSuccess} />
           )}
 
           <form onSubmit={submit} className="space-y-4">
@@ -128,14 +106,14 @@ export function AuthPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
-              </Field>
+              Field>
             )}
             <Field icon={<Mail className="h-4 w-4" />} label="Email">
               <input
                 className="input-field pl-10"
                 type="email"
                 required
-                placeholder="you@gmail.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -159,7 +137,7 @@ export function AuthPage() {
             )}
 
             <Button type="submit" className="w-full" loading={loading}>
-              {mode === "login" ? "Sign in with email" : "Create account with email"}
+              {mode === "login" ? "Sign in" : "Create account"}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
