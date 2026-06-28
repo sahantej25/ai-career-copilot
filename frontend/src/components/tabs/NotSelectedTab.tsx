@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { AIThinkingAnimation } from "@/components/ui/Spinner";
 import { useAppStore } from "@/hooks/useAppStore";
-import { cn, formatRelativeTime, getMatchColor } from "@/lib/utils";
+import { cn, formatRelativeTime, getMatchColor, INPUT_LIMITS, sanitizeUserInput } from "@/lib/utils";
 import * as api from "@/lib/api";
 import type { Application, SkillChange, ProfileUpdate } from "@/types";
 
@@ -65,7 +65,10 @@ function RejectionRow({ app, onAnalyzed }: { app: Application; onAnalyzed: () =>
     setLoading(`analyze-${app.id}`, true);
     setResult(null);
     try {
-      const res = await api.analyzeRejection({ application_id: app.id, notes });
+      const res = await api.analyzeRejection({
+        application_id: app.id,
+        notes: sanitizeUserInput(notes, INPUT_LIMITS.rejectionField),
+      });
       setResult({ summary: res.summary, skill_changes: res.skill_changes, recommendations: res.recommendations });
       // refresh living profile
       try {
@@ -106,6 +109,7 @@ function RejectionRow({ app, onAnalyzed }: { app: Application; onAnalyzed: () =>
         placeholder="Write freely: interview experience, questions you couldn't answer, topics you felt weak in, the rejection email, recruiter feedback, anything you observed..."
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
+        maxLength={INPUT_LIMITS.rejectionField}
       />
 
       <div className="mt-3 flex items-center justify-between gap-3">

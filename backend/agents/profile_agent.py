@@ -14,6 +14,15 @@ try:
 except ImportError:
     DocxDocument = None
 
+from services.guardrails import (
+    clamp_percentage,
+    sanitize_ai_text,
+    sanitize_name,
+    validate_hex_color,
+    validate_section_order,
+    wrap_untrusted_content,
+)
+from services.guardrails.constants import MAX_REFERENCE_TEXT_CHARS, MAX_RESUME_TEXT_CHARS, MAX_SKILLS
 from services.openai_service import chat_json
 from models.schemas import CandidateProfile, Skill, Project, Experience, Education, ResumeStyle
 
@@ -34,6 +43,7 @@ Return ONLY valid JSON with this exact schema:
 }
 Confidence is 0-100 based on how prominently the skill appears. Category is one of:
 programming, framework, database, cloud, tool, soft-skill, domain, other.
+Do not invent credentials, employers, or skills not present in the resume text.
 """
 
 
@@ -58,7 +68,6 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     elif ext in ("docx", "doc"):
         return extract_text_from_docx(file_bytes)
     else:
-        # Try as plain text
         return file_bytes.decode("utf-8", errors="ignore")
 
 
@@ -67,54 +76,71 @@ async def parse_resume(file_bytes: bytes, filename: str) -> CandidateProfile:
     if not raw_text.strip():
         raise ValueError("Could not extract text from the uploaded file.")
 
-    data = await chat_json(_SYSTEM, f"Resume text:\n\n{raw_text[:8000]}")
+    resume_block = wrap_untrusted_content(
+        "resume_text",
+        raw_text[:MAX_RESUME_TEXT_CHARS],
+        max_len=MAX_RESUME_TEXT_CHARS,
+    )
+    data = await chat_json(_SYSTEM, resume_block, agent="profile_parser")
 
     skills = [
         Skill(
-            name=s.get("name", ""),
-            confidence=float(s.get("confidence", 70)),
-            category=s.get("category", "general"),
+            name=sanitize_ai_text(s.get("name", ""), max_len=80),
+            confidence=clamp_percentage(s.get("confidence", 70), default=70),
+            category=sanitize_ai_text(s.get("category", "general"), max_len=40) or "general",
         )
-        for s in data.get("skills", [])
+        for s in data.get("skills", [])[:MAX_SKILLS]
         if s.get("name")
     ]
     projects = [
         Project(
-            name=p.get("name", ""),
-            description=p.get("description", ""),
-            technologies=p.get("technologies", []),
+            name=sanitize_ai_text(p.get("name", ""), max_len=120),
+            description=sanitize_ai_text(p.get("description", ""), max_len=500),
+            technologies=[
+                sanitize_ai_text(t, max_len=60)
+                for t in (p.get("technologies") or [])[:20]
+                if t
+            ],
         )
-        for p in data.get("projects", [])
+        for p in data.get("projects", [])[:30]
     ]
     experience = [
         Experience(
-            company=e.get("company", ""),
-            role=e.get("role", ""),
-            duration=e.get("duration", ""),
-            description=e.get("description", []),
+            company=sanitize_ai_text(e.get("company", ""), max_len=120),
+            role=sanitize_ai_text(e.get("role", ""), max_len=120),
+            duration=sanitize_ai_text(e.get("duration", ""), max_len=80),
+            description=[
+                sanitize_ai_text(b, max_len=400)
+                for b in (e.get("description") or [])[:15]
+                if b
+            ],
         )
-        for e in data.get("experience", [])
+        for e in data.get("experience", [])[:25]
     ]
     education = [
         Education(
-            degree=e.get("degree", ""),
-            institution=e.get("institution", ""),
-            year=e.get("year", ""),
+            degree=sanitize_ai_text(e.get("degree", ""), max_len=120),
+            institution=sanitize_ai_text(e.get("institution", ""), max_len=120),
+            year=sanitize_ai_text(e.get("year", ""), max_len=20),
         )
-        for e in data.get("education", [])
+        for e in data.get("education", [])[:10]
     ]
 
     return CandidateProfile(
-        name=data.get("name", ""),
-        email=data.get("email", ""),
-        phone=data.get("phone", ""),
-        location=data.get("location", ""),
-        summary=data.get("summary", ""),
+        name=sanitize_name(data.get("name", "")),
+        email=sanitize_ai_text(data.get("email", ""), max_len=120),
+        phone=sanitize_ai_text(data.get("phone", ""), max_len=40),
+        location=sanitize_ai_text(data.get("location", ""), max_len=120),
+        summary=sanitize_ai_text(data.get("summary", ""), max_len=800),
         skills=skills,
         projects=projects,
         experience=experience,
         education=education,
-        domains=data.get("domains", []),
+        domains=[
+            sanitize_ai_text(d, max_len=60)
+            for d in data.get("domains", [])[:20]
+            if d
+        ],
     )
 
 
@@ -130,8 +156,6 @@ Return ONLY valid JSON:
 section_order must only use values from: summary, skills, experience, projects, education.
 """
 
-_ALLOWED_SECTIONS = {"summary", "skills", "experience", "projects", "education"}
-
 
 async def extract_resume_style(file_bytes: bytes, filename: str) -> ResumeStyle:
     """Parse an optional reference resume and infer stylistic guidance only."""
@@ -139,21 +163,16 @@ async def extract_resume_style(file_bytes: bytes, filename: str) -> ResumeStyle:
     if not raw_text.strip():
         raise ValueError("Could not extract text from the reference resume.")
 
-    data = await chat_json(_STYLE_SYSTEM, f"Reference resume text:\n\n{raw_text[:6000]}")
-
-    order = [s for s in data.get("section_order", []) if s in _ALLOWED_SECTIONS]
-    # Ensure all sections are represented (append any missing in a sensible default order)
-    for s in ["summary", "skills", "experience", "projects", "education"]:
-        if s not in order:
-            order.append(s)
-
-    accent = str(data.get("accent_hex", "#10b981")).strip()
-    if not (accent.startswith("#") and len(accent) in (4, 7)):
-        accent = "#10b981"
+    resume_block = wrap_untrusted_content(
+        "reference_resume",
+        raw_text[:MAX_REFERENCE_TEXT_CHARS],
+        max_len=MAX_REFERENCE_TEXT_CHARS,
+    )
+    data = await chat_json(_STYLE_SYSTEM, resume_block, agent="resume_style")
 
     return ResumeStyle(
-        section_order=order,
-        tone=str(data.get("tone", "")).strip(),
-        accent_hex=accent,
-        notes=str(data.get("notes", "")).strip(),
+        section_order=validate_section_order(data.get("section_order")),
+        tone=sanitize_ai_text(data.get("tone", ""), max_len=120),
+        accent_hex=validate_hex_color(data.get("accent_hex")),
+        notes=sanitize_ai_text(data.get("notes", ""), max_len=300),
     )

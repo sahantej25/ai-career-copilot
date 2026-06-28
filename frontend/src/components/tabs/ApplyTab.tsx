@@ -11,7 +11,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Progress, AnimatedCounter } from "@/components/ui/Progress";
 import { useAppStore } from "@/hooks/useAppStore";
-import { cn, getMatchColor } from "@/lib/utils";
+import { cn, getMatchColor, INPUT_LIMITS, sanitizeUserInput } from "@/lib/utils";
 import * as api from "@/lib/api";
 import type { ResumePreview } from "@/types";
 
@@ -207,8 +207,11 @@ export function ApplyTab() {
     setLoading("match", true);
     setPreview(null);
     setResumeDownloaded(false);
+    const jd = sanitizeUserInput(currentJD, INPUT_LIMITS.jobDescription);
+    const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
+    const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
     try {
-      const result = await api.matchJob(currentJD, currentCompany, currentRole);
+      const result = await api.matchJob(jd, company, role);
       setCurrentMatch(result);
       if (result.company && !currentCompany.trim()) setCurrentCompany(result.company);
       if (result.role && !currentRole.trim()) setCurrentRole(result.role);
@@ -216,7 +219,7 @@ export function ApplyTab() {
       addToast({ type: "success", message: "Skills extracted & match calculated!" });
       // Auto-load resume preview (what it will emphasize)
       try {
-        const pv = await api.resumePreview(currentJD, result.company || currentCompany, result.role || currentRole, result.job_required_skills || []);
+        const pv = await api.resumePreview(jd, result.company || company, result.role || role, result.job_required_skills || []);
         setPreview(pv);
       } catch { /* preview is best-effort */ }
     } catch (e: any) {
@@ -228,8 +231,11 @@ export function ApplyTab() {
 
   const handleDownloadResume = async () => {
     setLoading("generate", true);
+    const jd = sanitizeUserInput(currentJD, INPUT_LIMITS.jobDescription);
+    const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
+    const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
     try {
-      const blob = await api.generateResume(currentJD, currentCompany, currentRole, currentSkillsRequired);
+      const blob = await api.generateResume(jd, company, role, currentSkillsRequired);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -248,11 +254,14 @@ export function ApplyTab() {
   const handleSubmit = async () => {
     if (!currentMatch) return;
     setLoading("submit", true);
+    const jd = sanitizeUserInput(currentJD, INPUT_LIMITS.jobDescription);
+    const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
+    const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
     try {
       const app = await api.submitApplication({
-        company: currentCompany,
-        role: currentRole,
-        job_description: currentJD,
+        company,
+        role,
+        job_description: jd,
         match_percentage: currentMatch.match_percentage,
         matched_skills: currentMatch.matched_skills,
         missing_skills: currentMatch.missing_skills,

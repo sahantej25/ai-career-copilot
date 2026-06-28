@@ -106,7 +106,7 @@ export function AuthPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
-              Field>
+              </Field>
             )}
             <Field icon={<Mail className="h-4 w-4" />} label="Email">
               <input
