@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   CandidateProfile, Application, MatchResult,
-  GlobalAnalysis, ProfileUpdate, TabId,
+  GlobalAnalysis, ProfileUpdate, TabId, JobListing,
 } from "@/types";
 
 interface Toast {
@@ -29,6 +29,11 @@ interface AppStore {
   setCurrentCompany: (c: string) => void;
   currentRole: string;
   setCurrentRole: (r: string) => void;
+  currentSkillsRequired: string[];
+  setCurrentSkillsRequired: (s: string[]) => void;
+  referenceLoaded: boolean;
+  referenceName: string;
+  setReference: (loaded: boolean, name?: string) => void;
 
   // Applications
   applications: Application[];
@@ -48,12 +53,20 @@ interface AppStore {
   removeToast: (id: string) => void;
   isLoading: Record<string, boolean>;
   setLoading: (key: string, val: boolean) => void;
+
+  // Job discovery (Jobright-style feed)
+  pendingJob: JobListing | null;
+  startApplicationFromJob: (job: JobListing) => void;
+  clearPendingJob: () => void;
+
+  // Global
+  resetAll: () => void;
 }
 
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
-      activeTab: "apply",
+      activeTab: "discover",
       setActiveTab: (tab) => set({ activeTab: tab }),
 
       profile: null,
@@ -67,6 +80,11 @@ export const useAppStore = create<AppStore>()(
       setCurrentCompany: (c) => set({ currentCompany: c }),
       currentRole: "",
       setCurrentRole: (r) => set({ currentRole: r }),
+      currentSkillsRequired: [],
+      setCurrentSkillsRequired: (s) => set({ currentSkillsRequired: s }),
+      referenceLoaded: false,
+      referenceName: "",
+      setReference: (loaded, name = "") => set({ referenceLoaded: loaded, referenceName: name }),
 
       applications: [],
       setApplications: (apps) => set({ applications: apps }),
@@ -100,6 +118,39 @@ export const useAppStore = create<AppStore>()(
       isLoading: {},
       setLoading: (key, val) =>
         set((s) => ({ isLoading: { ...s.isLoading, [key]: val } })),
+
+      pendingJob: null,
+      startApplicationFromJob: (job) => {
+        const plainDesc = job.description?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+          || job.excerpt
+          || `${job.title} at ${job.company}`;
+        set({
+          pendingJob: job,
+          currentJD: plainDesc,
+          currentCompany: job.company,
+          currentRole: job.title,
+          currentSkillsRequired: job.tags.length ? job.tags : job.matched_skills,
+          currentMatch: null,
+          activeTab: "apply",
+        });
+      },
+      clearPendingJob: () => set({ pendingJob: null }),
+
+      resetAll: () =>
+        set({
+          profile: null,
+          currentMatch: null,
+          currentJD: "",
+          currentCompany: "",
+          currentRole: "",
+          currentSkillsRequired: [],
+          referenceLoaded: false,
+          referenceName: "",
+          applications: [],
+          globalAnalysis: null,
+          profileHistory: [],
+          pendingJob: null,
+        }),
     }),
     {
       name: "career-copilot-store",
@@ -113,6 +164,9 @@ export const useAppStore = create<AppStore>()(
         currentCompany: s.currentCompany,
         currentRole: s.currentRole,
         currentMatch: s.currentMatch,
+        currentSkillsRequired: s.currentSkillsRequired,
+        referenceLoaded: s.referenceLoaded,
+        referenceName: s.referenceName,
       }),
     }
   )
