@@ -29,6 +29,7 @@ Thumbs.db
 backend/data/data.local.json
 backend/data/users/
 backend/.env
+frontend/.env
 
 # Test artifacts
 backend/.pytest_cache/
@@ -40,3 +41,10 @@ npm-debug.log*
 
 # Build
 frontend/dist/
+
+# local files
+docs
+scripts
+SETUP.md
+*.txt
+*.docx

@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { JobListing, JobPreferences } from "@/types";
+import type { AuthResponse, JobListing, JobPreferences } from "@/types";
 import * as api from "@/lib/api";
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  auth_provider?: "local" | "google" | "linked";
+  picture?: string;
 }
 
 interface AuthStore {
@@ -20,6 +22,7 @@ interface AuthStore {
 
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => void;
   bootstrapSession: () => Promise<void>;
   refreshLiveJobs: (force?: boolean) => Promise<void>;
@@ -28,68 +31,69 @@ interface AuthStore {
 
 export const useAuthStore = create<AuthStore>()(
   persist(
-    (set, get) => ({
-      token: null,
-      user: null,
-      isAuthenticated: false,
-      liveJobs: [],
-      liveJobsFetchedAt: null,
-      liveJobsFromCache: false,
-      jobPreferences: null,
-
-      login: async (email, password) => {
-        const res = await api.login(email, password);
+    (set, get) => {
+      const completeAuth = async (res: AuthResponse) => {
         api.setAuthToken(res.access_token);
         set({ token: res.access_token, user: res.user, isAuthenticated: true });
         await get().bootstrapSession();
         await get().refreshLiveJobs(true);
-      },
+      };
 
-      register: async (email, password, name) => {
-        const res = await api.register(email, password, name);
-        api.setAuthToken(res.access_token);
-        set({ token: res.access_token, user: res.user, isAuthenticated: true });
-        await get().bootstrapSession();
-        await get().refreshLiveJobs(true);
-      },
+      return {
+        token: null,
+        user: null,
+        isAuthenticated: false,
+        liveJobs: [],
+        liveJobsFetchedAt: null,
+        liveJobsFromCache: false,
+        jobPreferences: null,
 
-      logout: () => {
-        api.setAuthToken(null);
-        set({
-          token: null,
-          user: null,
-          isAuthenticated: false,
-          liveJobs: [],
-          liveJobsFetchedAt: null,
-          liveJobsFromCache: false,
-          jobPreferences: null,
-        });
-      },
+        login: async (email, password) => completeAuth(await api.login(email, password)),
 
-      bootstrapSession: async () => {
-        const session = await api.getSession();
-        set({
-          user: session.user,
-          jobPreferences: session.data.job_preferences || null,
-          liveJobsFetchedAt: session.live_jobs_fetched_at,
-        });
-        if (session.data.cached_live_jobs?.length) {
-          set({ liveJobs: session.data.cached_live_jobs });
-        }
-      },
+        register: async (email, password, name) =>
+          completeAuth(await api.register(email, password, name)),
 
-      refreshLiveJobs: async (force = false) => {
-        const data = await api.fetchLiveJobs(force);
-        set({
-          liveJobs: data.jobs,
-          liveJobsFetchedAt: data.fetched_at,
-          liveJobsFromCache: data.from_cache ?? false,
-          jobPreferences: data.preferences || get().jobPreferences,
-        });
-      },
+        loginWithGoogle: async (credential) =>
+          completeAuth(await api.loginWithGoogle(credential)),
 
-      setJobPreferences: (prefs) => set({ jobPreferences: prefs }),
-    }),
+        logout: () => {
+          api.setAuthToken(null);
+          set({
+            token: null,
+            user: null,
+            isAuthenticated: false,
+            liveJobs: [],
+            liveJobsFetchedAt: null,
+            liveJobsFromCache: false,
+            jobPreferences: null,
+          });
+        },
+
+        bootstrapSession: async () => {
+          const session = await api.getSession();
+          set({
+            user: session.user,
+            jobPreferences: session.data.job_preferences || null,
+            liveJobsFetchedAt: session.live_jobs_fetched_at,
+          });
+          if (session.data.cached_live_jobs?.length) {
+            set({ liveJobs: session.data.cached_live_jobs });
+          }
+        },
+
+        refreshLiveJobs: async (force = false) => {
+          const data = await api.fetchLiveJobs(force);
+          set({
+            liveJobs: data.jobs,
+            liveJobsFetchedAt: data.fetched_at,
+            liveJobsFromCache: data.from_cache ?? false,
+            jobPreferences: data.preferences || get().jobPreferences,
+          });
+        },
+
+        setJobPreferences: (prefs) => set({ jobPreferences: prefs }),
+      };
+    },
     {
       name: "career-copilot-auth",
       storage: createJSONStorage(() => localStorage),

@@ -76,9 +76,17 @@ export function Header() {
 
           {authUser && (
             <div className="hidden items-center gap-2 rounded-full border border-slate-200/80 bg-white/60 py-1 pl-1 pr-3 sm:flex">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-teal-500 text-xs font-bold text-white">
-                {authUser.name?.charAt(0).toUpperCase() || "U"}
-              </div>
+              {authUser.picture ? (
+                <img
+                  src={authUser.picture}
+                  alt=""
+                  className="h-7 w-7 rounded-full object-cover ring-2 ring-white"
+                />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-teal-500 text-xs font-bold text-white">
+                  {authUser.name?.charAt(0).toUpperCase() || "U"}
+                </div>
+              )}
               <div className="min-w-0">
                 <p className="max-w-[120px] truncate text-sm font-medium text-ink-700">{authUser.name}</p>
                 {liveJobsFetchedAt && (

@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from deps.auth import bind_user_context
 from models.schemas import (
-    AuthResponse, LoginRequest, RegisterRequest, UserPublic,
+    AuthResponse, GoogleAuthRequest, LoginRequest, RegisterRequest, UserPublic,
     JobPreferences,
 )
 from services import storage_service as store
-from services.auth_service import authenticate_user, create_access_token, register_user
+from services.auth_service import (
+    authenticate_google_user,
+    authenticate_user,
+    create_access_token,
+    register_user,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -25,6 +30,16 @@ async def register(req: RegisterRequest):
 async def login(req: LoginRequest):
     try:
         user = authenticate_user(req.email, req.password)
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+    token = create_access_token(user.id, user.email)
+    return AuthResponse(access_token=token, user=user)
+
+
+@router.post("/google", response_model=AuthResponse)
+async def google_login(req: GoogleAuthRequest):
+    try:
+        user = authenticate_google_user(req.credential)
     except ValueError as e:
         raise HTTPException(401, str(e))
     token = create_access_token(user.id, user.email)
