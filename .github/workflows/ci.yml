@@ -49,10 +49,8 @@ jobs:
 
       - name: Run all pytest tests
         run: pytest -v --tb=short
-        env:
-          JWT_SECRET: ci-test-secret-do-not-use-in-prod
-          OPENAI_API_KEY: sk-ci-placeholder
-          # Google OAuth intentionally unset — email/password must work in CI
+        # No secrets env block — tests force safe values in tests/conftest.py
+        # (GitHub has no .env; OpenAI/Google keys are never required to pass CI)
 
   frontend-tests:
     name: Frontend Tests
