@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 
+from deps.auth import bind_user_context
 from models.schemas import (
     AnalyzeRejectionRequest, AnalyzeRejectionResponse,
     RejectionNote, GlobalAnalysis, AppData,
@@ -8,7 +9,7 @@ from models.schemas import (
 from agents.learning_agent import analyze_rejection, build_global_analysis
 from services import storage_service as store
 
-router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+router = APIRouter(prefix="/api/analysis", tags=["analysis"], dependencies=[Depends(bind_user_context)])
 
 
 @router.post("/rejection/analyze", response_model=AnalyzeRejectionResponse)
@@ -24,6 +25,7 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
 
     rejection = RejectionNote(
         application_id=req.application_id,
+        notes=req.notes,
         interview_experience=req.interview_experience,
         rejection_email=req.rejection_email,
         topics_struggled=req.topics_struggled,
@@ -33,11 +35,13 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
     )
 
     try:
-        profile_update, updated_profile = await analyze_rejection(
+        profile_update, updated_profile, summary = await analyze_rejection(
             data.current_profile_state, rejection, app
         )
     except Exception as e:
         raise HTTPException(500, f"Rejection analysis failed: {e}")
+
+    rejection.summary = summary
 
     # Persist: updated profile + rejection note + profile update
     data.current_profile_state = updated_profile
@@ -45,7 +49,7 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
     await store.upsert_rejection(rejection)
     await store.add_profile_update(profile_update)
 
-    # Auto-update application status
+    # Ensure the application is marked not_selected
     app.status = "not_selected"
     app.updated_at = datetime.utcnow().isoformat() + "Z"
     await store.upsert_application(app)
@@ -54,7 +58,7 @@ async def analyze_rejection_endpoint(req: AnalyzeRejectionRequest):
         skill_changes=profile_update.changes,
         recommendations=profile_update.recommendations,
         profile_update=profile_update,
-        summary=f"Profile updated based on rejection from {app.company}.",
+        summary=summary,
     )
 
 
