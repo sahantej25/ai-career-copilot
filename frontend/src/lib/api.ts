@@ -90,6 +90,15 @@ export async function uploadProfile(file: File): Promise<CandidateProfile> {
   return data.profile as CandidateProfile;
 }
 
+export async function saveProfile(profile: CandidateProfile): Promise<CandidateProfile> {
+  const { data } = await http.put("/api/apply/profile", profile);
+  return data as CandidateProfile;
+}
+
+export async function clearProfile(): Promise<void> {
+  await http.delete("/api/apply/profile");
+}
+
 export async function uploadReference(
   file: File
 ): Promise<{ style: ResumeStyle; name: string }> {

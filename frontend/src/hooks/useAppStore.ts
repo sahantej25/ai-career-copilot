@@ -19,6 +19,8 @@ interface AppStore {
   // Profile
   profile: CandidateProfile | null;
   setProfile: (p: CandidateProfile | null) => void;
+  profileModalOpen: boolean;
+  setProfileModalOpen: (open: boolean) => void;
 
   // Current apply flow state
   currentMatch: MatchResult | null;
@@ -71,6 +73,8 @@ export const useAppStore = create<AppStore>()(
 
       profile: null,
       setProfile: (p) => set({ profile: p }),
+      profileModalOpen: false,
+      setProfileModalOpen: (open) => set({ profileModalOpen: open }),
 
       currentMatch: null,
       setCurrentMatch: (m) => set({ currentMatch: m }),

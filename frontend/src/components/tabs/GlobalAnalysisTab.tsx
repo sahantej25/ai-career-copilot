@@ -122,7 +122,7 @@ function CompanySkillMatrix({ applications }: { applications: { company: string;
 }
 
 export function GlobalAnalysisTab() {
-  const { globalAnalysis, setGlobalAnalysis, applications, addToast, isLoading, setLoading } = useAppStore();
+  const { globalAnalysis, setGlobalAnalysis, applications, profile, addToast, isLoading, setLoading, setProfileModalOpen } = useAppStore();
 
   const fetchAnalysis = async () => {
     try { setGlobalAnalysis(await api.getGlobalAnalysis()); } catch { /* none yet */ }
@@ -143,6 +143,7 @@ export function GlobalAnalysisTab() {
 
   const busy = isLoading["global"];
   const rejected = applications.filter((a) => a.status === "not_selected");
+  const canRun = rejected.length > 0 && !!profile;
 
   const stats = [
     { label: "Total Applied", value: applications.length, icon: <Target className="h-4 w-4" />, color: "text-sky-600", bg: "bg-sky-50" },
@@ -161,7 +162,7 @@ export function GlobalAnalysisTab() {
           </h1>
           <p className="text-sm text-ink-500">Consolidated patterns across every rejection — what to focus on before your next round.</p>
         </div>
-        <Button onClick={handleRefresh} loading={busy} disabled={rejected.length === 0} className="shrink-0">
+        <Button onClick={handleRefresh} loading={busy} disabled={!canRun} className="shrink-0">
           <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
           {busy ? "Analyzing..." : "Run Global Analysis"}
         </Button>
@@ -190,11 +191,18 @@ export function GlobalAnalysisTab() {
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100"><BarChart3 className="h-8 w-8 text-ink-400" /></div>
           <h3 className="font-display text-lg font-semibold text-ink-800">No analysis yet</h3>
           <p className="mx-auto mt-1 max-w-sm text-sm text-ink-500">
-            {rejected.length === 0
-              ? "Analyze some rejections in the 'Not Selected' tab first — patterns emerge across multiple rejections."
+            {!profile
+              ? "Add your candidate profile first — use the Profile button in the header or Living Profile card in the sidebar."
+              : rejected.length === 0
+              ? "Mark applications as Not Selected in Tracking — patterns emerge across multiple rejections."
               : "Click 'Run Global Analysis' to generate consolidated insights."}
           </p>
-          {rejected.length > 0 && <Button onClick={handleRefresh} className="mt-5"><Sparkles className="h-4 w-4" /> Generate Analysis</Button>}
+          {!profile && (
+            <Button onClick={() => setProfileModalOpen(true)} className="mt-5">
+              <Sparkles className="h-4 w-4" /> Add profile
+            </Button>
+          )}
+          {profile && rejected.length > 0 && <Button onClick={handleRefresh} className="mt-5"><Sparkles className="h-4 w-4" /> Generate Analysis</Button>}
         </div>
       )}
 

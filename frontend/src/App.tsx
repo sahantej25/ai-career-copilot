@@ -13,6 +13,7 @@ import { ApplyTab } from "@/components/tabs/ApplyTab";
 import { TrackingTab } from "@/components/tabs/TrackingTab";
 import { NotSelectedTab } from "@/components/tabs/NotSelectedTab";
 import { GlobalAnalysisTab } from "@/components/tabs/GlobalAnalysisTab";
+import { ProfileModal } from "@/components/profile/ProfileModal";
 
 const PAGE_VARIANTS = {
   initial: { opacity: 0, y: 16, filter: "blur(6px)" },
@@ -100,6 +101,7 @@ function AuthenticatedApp() {
   return (
     <>
       <Header />
+      <ProfileModal />
       <div className="mx-auto flex w-full max-w-[1440px] px-3 sm:px-5" style={{ minHeight: "calc(100vh - 72px)" }}>
         <Sidebar />
         <main className="flex-1 flex flex-col overflow-hidden pb-24 lg:pb-6">

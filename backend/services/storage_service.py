@@ -91,6 +91,25 @@ async def upsert_application(app: Application, status_note: str = "") -> AppData
     return data
 
 
+def ensure_rejection_stubs(data: AppData) -> bool:
+    """Create stub rejection records for not-selected apps missing from rejections."""
+    existing = {r.application_id for r in data.rejections}
+    changed = False
+    for app in data.applications:
+        if app.status != ApplicationStatus.not_selected or app.id in existing:
+            continue
+        data.rejections.append(
+            RejectionNote(
+                application_id=app.id,
+                missing_skills=", ".join(app.missing_skills),
+                notes=app.notes or "",
+            )
+        )
+        existing.add(app.id)
+        changed = True
+    return changed
+
+
 async def upsert_rejection(rejection: RejectionNote) -> AppData:
     data = await load_data()
     idx = next((i for i, r in enumerate(data.rejections) if r.application_id == rejection.application_id), None)

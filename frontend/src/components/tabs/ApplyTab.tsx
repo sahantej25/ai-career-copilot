@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, Briefcase, Zap, Download, CheckCircle2,
   UploadCloud, X, RefreshCw, Target, AlertCircle, Sparkles,
-  Plus, FileCheck2, Wand2, ListChecks, ExternalLink,
+  Plus, FileCheck2, Wand2, ListChecks, ExternalLink, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
@@ -139,7 +139,7 @@ export function ApplyTab() {
     referenceLoaded, referenceName, setReference,
     currentMatch, setCurrentMatch, upsertApplication, setActiveTab,
     addToast, isLoading, setLoading,
-    pendingJob, clearPendingJob,
+    pendingJob, clearPendingJob, setProfileModalOpen,
   } = useAppStore();
 
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -164,6 +164,15 @@ export function ApplyTab() {
   const canSubmit = resumeDownloaded && c.company && c.role && c.match;
 
   /* ---- handlers ---- */
+  const handleRemoveProfile = async () => {
+    try {
+      await api.clearProfile();
+    } catch { /* ignore if already cleared */ }
+    setProfile(null);
+    setResumeFile(null);
+    addToast({ type: "info", message: "Profile removed." });
+  };
+
   const handleUploadProfile = async () => {
     if (!resumeFile) return;
     setLoading("upload", true);
@@ -363,9 +372,14 @@ export function ApplyTab() {
                     {profile.domains.slice(0, 4).map((d) => <Badge key={d} variant="purple">{d}</Badge>)}
                   </div>
                 </div>
-                <button onClick={() => { setProfile(null); setResumeFile(null); }} className="shrink-0 rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-slate-100 hover:text-ink-700 cursor-pointer" aria-label="Remove profile">
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 gap-1">
+                  <button onClick={() => setProfileModalOpen(true)} className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-slate-100 hover:text-ink-700 cursor-pointer" aria-label="Edit profile">
+                    <User className="h-4 w-4" />
+                  </button>
+                  <button onClick={handleRemoveProfile} className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-slate-100 hover:text-ink-700 cursor-pointer" aria-label="Remove profile">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               <div>
                 <p className="section-label mb-2.5">Extracted Skills · {profile.skills.length}</p>
@@ -395,6 +409,15 @@ export function ApplyTab() {
               <Button onClick={handleUploadProfile} disabled={!resumeFile} loading={loading("upload")} className="w-full">
                 <Upload className="h-4 w-4" />
                 {loading("upload") ? "Parsing with AI..." : "Parse Profile"}
+              </Button>
+              <div className="relative flex items-center py-1">
+                <div className="flex-1 border-t border-slate-200" />
+                <span className="px-3 text-xs text-ink-400">or</span>
+                <div className="flex-1 border-t border-slate-200" />
+              </div>
+              <Button variant="secondary" onClick={() => setProfileModalOpen(true)} className="w-full">
+                <User className="h-4 w-4" />
+                Enter profile manually
               </Button>
             </div>
           )}
