@@ -40,8 +40,12 @@ OPENAI_MAX_TEMPERATURE = 1.0
 MAX_REQUEST_BODY_MB = 12
 
 # ── Allowed job feed / tracking sources ───────────────────────────────────────
-ALLOWED_JOB_SOURCES = frozenset({"linkedin", "greenhouse", "hiringcafe"})
-ALLOWED_TRACK_SOURCES = frozenset({"manual", "linkedin", "greenhouse", "hiringcafe", ""})
+ALLOWED_JOB_SOURCES = frozenset({
+    "linkedin", "greenhouse", "hiringcafe", "shine", "naukri", "indeed_india",
+})
+ALLOWED_TRACK_SOURCES = frozenset({
+    "manual", "linkedin", "greenhouse", "hiringcafe", "shine", "naukri", "indeed_india", "",
+})
 
 # ── Phrases AI must never emit in resume/candidate-facing output ──────────────
 FORBIDDEN_OUTPUT_PHRASES = (
