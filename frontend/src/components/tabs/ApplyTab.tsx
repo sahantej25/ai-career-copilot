@@ -3,98 +3,130 @@ import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, Briefcase, Zap, Download, CheckCircle2,
-  UploadCloud, X, RefreshCw, Target, AlertCircle, ChevronRight,
+  UploadCloud, X, RefreshCw, Target, AlertCircle, Sparkles,
+  Plus, FileCheck2, Wand2, ListChecks, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Progress, AnimatedCounter } from "@/components/ui/Progress";
-import { Spinner } from "@/components/ui/Spinner";
 import { useAppStore } from "@/hooks/useAppStore";
 import { cn, getMatchColor } from "@/lib/utils";
 import * as api from "@/lib/api";
+import type { ResumePreview } from "@/types";
 
-type Step = "profile" | "jd" | "match" | "generate" | "submit";
-
-function StepIndicator({ step, current }: { step: Step; current: Step }) {
-  const steps: Step[] = ["profile", "jd", "match", "generate", "submit"];
-  const idx = steps.indexOf(step);
-  const cur = steps.indexOf(current);
-  const done = cur > idx;
-  const active = cur === idx;
-
-  return (
-    <div className={cn("flex items-center gap-2 text-xs font-medium transition-colors",
-      done ? "text-emerald-400" : active ? "text-indigo-400" : "text-slate-500")}>
-      <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-        done ? "bg-emerald-500 text-white" : active ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-500")}>
-        {done ? "✓" : idx + 1}
-      </span>
-      <span className="hidden sm:block">
-        {step === "profile" ? "Profile" : step === "jd" ? "Job Description" : step === "match" ? "Match" : step === "generate" ? "Resume" : "Submit"}
-      </span>
-    </div>
-  );
-}
-
-function FileDropZone({ onFile, file, label, accept }: {
+/* ───────────────────────── File dropzone ───────────────────────── */
+function FileDropZone({ onFile, file, label, hint, accept, tone = "brand" }: {
   onFile: (f: File) => void;
   file: File | null;
   label: string;
-  accept?: string;
+  hint: string;
+  accept: Record<string, string[]>;
+  tone?: "brand" | "violet";
 }) {
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted[0]) onFile(accepted[0]);
   }, [onFile]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    maxFiles: 1,
-    accept: {
-      "application/pdf": [".pdf"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-      "text/plain": [".txt"],
-    },
-  });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, maxFiles: 1, accept });
 
   return (
     <div
       {...getRootProps()}
       className={cn(
-        "relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200",
+        "group relative cursor-pointer overflow-hidden rounded-2xl border border-dashed p-6 text-center transition-all duration-300 ease-out-expo",
         isDragActive
-          ? "border-indigo-500 bg-indigo-500/10"
+          ? "border-brand-400 bg-brand-50"
           : file
-          ? "border-emerald-500/50 bg-emerald-500/5"
-          : "border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800/30"
+          ? "border-emerald-300 bg-emerald-50/60"
+          : "border-slate-300 bg-white/40 hover:border-brand-400 hover:bg-brand-50/40"
       )}
     >
       <input {...getInputProps()} />
       <AnimatePresence mode="wait">
         {file ? (
-          <motion.div
-            key="file"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-3"
-          >
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
-              <FileText className="w-5 h-5 text-emerald-400" />
+          <motion.div key="f" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-3 text-left">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+              <FileCheck2 className="h-5 w-5 text-emerald-600" />
             </div>
-            <div className="text-left flex-1 min-w-0">
-              <p className="text-sm font-medium text-emerald-400 truncate">{file.name}</p>
-              <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(0)} KB</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-emerald-700">{file.name}</p>
+              <p className="text-xs text-ink-400">{(file.size / 1024).toFixed(0)} KB · ready</p>
             </div>
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
           </motion.div>
         ) : (
-          <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <UploadCloud className={cn("w-8 h-8 mx-auto mb-2", isDragActive ? "text-indigo-400" : "text-slate-600")} />
-            <p className="text-sm text-slate-400 font-medium">{label}</p>
-            <p className="text-xs text-slate-600 mt-1">PDF, DOCX, TXT · Max 10MB</p>
+          <motion.div key="e" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className={cn(
+              "mx-auto mb-2.5 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300",
+              isDragActive ? "scale-110" : "",
+              tone === "violet" ? "bg-violet-100 text-violet-600" : "bg-brand-100 text-brand-600"
+            )}>
+              <UploadCloud className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-ink-700">{label}</p>
+            <p className="mt-0.5 text-xs text-ink-400">{hint}</p>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/* ───────────────────────── Editable chips ───────────────────────── */
+function EditableChips({ items, onChange, tone = "sky" }: {
+  items: string[];
+  onChange: (next: string[]) => void;
+  tone?: "sky" | "emerald";
+}) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const v = draft.trim();
+    if (v && !items.some((i) => i.toLowerCase() === v.toLowerCase())) onChange([...items, v]);
+    setDraft("");
+  };
+  const toneCls = tone === "emerald"
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : "bg-sky-50 text-sky-700 border-sky-200";
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((s) => (
+          <span key={s} className={cn("inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium", toneCls)}>
+            {s}
+            <button onClick={() => onChange(items.filter((i) => i !== s))} className="rounded-full p-0.5 hover:bg-black/5 cursor-pointer" aria-label={`Remove ${s}`}>
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        {items.length === 0 && <span className="text-xs text-ink-400">No skills yet — extract from the JD or add manually.</span>}
+      </div>
+      <div className="mt-2.5 flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+          placeholder="Add a skill and press Enter"
+          className="input-field flex-1 py-1.5 text-xs"
+        />
+        <Button size="sm" variant="secondary" onClick={add} disabled={!draft.trim()}>
+          <Plus className="h-3.5 w-3.5" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────── Gating checklist ───────────────────────── */
+function ChecklistItem({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className={cn("flex items-center gap-2 text-xs", done ? "text-emerald-600" : "text-ink-400")}>
+      <span className={cn("flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold",
+        done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-400")}>
+        {done ? "✓" : ""}
+      </span>
+      {label}
     </div>
   );
 }
@@ -103,23 +135,41 @@ export function ApplyTab() {
   const {
     profile, setProfile, currentJD, setCurrentJD,
     currentCompany, setCurrentCompany, currentRole, setCurrentRole,
+    currentSkillsRequired, setCurrentSkillsRequired,
+    referenceLoaded, referenceName, setReference,
     currentMatch, setCurrentMatch, upsertApplication, setActiveTab,
     addToast, isLoading, setLoading,
+    pendingJob, clearPendingJob,
   } = useAppStore();
 
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [currentStep, setCurrentStep] = useState<Step>(profile ? "jd" : "profile");
+  const [refFile, setRefFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ResumePreview | null>(null);
+  const [resumeDownloaded, setResumeDownloaded] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const loading = (k: string) => isLoading[k] ?? false;
 
+  /* ---- conditions (PRD §6.1) ---- */
+  const c = {
+    profile: !!profile,
+    jd: currentJD.trim().length > 0,
+    company: currentCompany.trim().length > 0,
+    role: currentRole.trim().length > 0,
+    skillsRequired: currentSkillsRequired.length > 0,
+    userSkills: (profile?.skills.length ?? 0) > 0,
+    match: !!currentMatch,
+  };
+  const canPrepare = Object.values(c).every(Boolean);
+  const canSubmit = resumeDownloaded && c.company && c.role && c.match;
+
+  /* ---- handlers ---- */
   const handleUploadProfile = async () => {
     if (!resumeFile) return;
     setLoading("upload", true);
     try {
       const parsed = await api.uploadProfile(resumeFile);
       setProfile(parsed);
-      setCurrentStep("jd");
       addToast({ type: "success", message: `Profile loaded: ${parsed.name || "Candidate"}` });
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
@@ -128,14 +178,47 @@ export function ApplyTab() {
     }
   };
 
+  const handleUploadReference = async (f: File) => {
+    setRefFile(f);
+    setLoading("reference", true);
+    try {
+      const { name } = await api.uploadReference(f);
+      setReference(true, name);
+      addToast({ type: "success", message: "Reference resume style captured." });
+    } catch (e: any) {
+      setRefFile(null);
+      addToast({ type: "error", message: e.message });
+    } finally {
+      setLoading("reference", false);
+    }
+  };
+
+  const handleRemoveReference = async () => {
+    try {
+      await api.removeReference();
+    } catch { /* ignore */ }
+    setRefFile(null);
+    setReference(false, "");
+    addToast({ type: "info", message: "Reference removed — default template will be used." });
+  };
+
   const handleMatch = async () => {
     if (!currentJD.trim()) return;
     setLoading("match", true);
+    setPreview(null);
+    setResumeDownloaded(false);
     try {
       const result = await api.matchJob(currentJD, currentCompany, currentRole);
       setCurrentMatch(result);
-      setCurrentStep("match");
-      addToast({ type: "success", message: "Skills extracted & matched!" });
+      if (result.company && !currentCompany.trim()) setCurrentCompany(result.company);
+      if (result.role && !currentRole.trim()) setCurrentRole(result.role);
+      if (result.job_required_skills?.length) setCurrentSkillsRequired(result.job_required_skills);
+      addToast({ type: "success", message: "Skills extracted & match calculated!" });
+      // Auto-load resume preview (what it will emphasize)
+      try {
+        const pv = await api.resumePreview(currentJD, result.company || currentCompany, result.role || currentRole, result.job_required_skills || []);
+        setPreview(pv);
+      } catch { /* preview is best-effort */ }
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
     } finally {
@@ -143,17 +226,17 @@ export function ApplyTab() {
     }
   };
 
-  const handleGenerateResume = async () => {
+  const handleDownloadResume = async () => {
     setLoading("generate", true);
     try {
-      const blob = await api.generateResume(currentJD, currentCompany, currentRole);
+      const blob = await api.generateResume(currentJD, currentCompany, currentRole, currentSkillsRequired);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `resume_${currentCompany || "tailored"}.pdf`;
+      a.download = `resume_${currentCompany.replace(/\s+/g, "_") || "tailored"}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      setCurrentStep("generate");
+      setResumeDownloaded(true);
       addToast({ type: "success", message: "Tailored resume downloaded!" });
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
@@ -173,10 +256,13 @@ export function ApplyTab() {
         match_percentage: currentMatch.match_percentage,
         matched_skills: currentMatch.matched_skills,
         missing_skills: currentMatch.missing_skills,
+        apply_url: pendingJob?.apply_url || "",
+        source: pendingJob?.source || "",
+        external_job_id: pendingJob?.id || "",
+        status: "submitted",
       });
       upsertApplication(app);
       setSubmitted(true);
-      setCurrentStep("submit");
       addToast({ type: "success", message: `Application to ${currentCompany} logged!` });
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
@@ -187,337 +273,349 @@ export function ApplyTab() {
 
   const handleReset = () => {
     setCurrentJD(""); setCurrentCompany(""); setCurrentRole("");
-    setCurrentMatch(null); setSubmitted(false);
-    setCurrentStep(profile ? "jd" : "profile");
+    setCurrentSkillsRequired([]); setCurrentMatch(null);
+    setPreview(null); setResumeDownloaded(false); setSubmitted(false);
+    clearPendingJob();
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      {/* Page title */}
-      <div>
-        <h1 className="text-2xl font-bold gradient-text">Prepare & Apply</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Upload your resume, match it to a job description, generate a tailored PDF, and submit.
+    <div className="mx-auto w-full max-w-4xl space-y-6 p-4 py-6 sm:p-6">
+      {/* Pre-filled from Discover feed */}
+      {pendingJob && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="border-brand-200 bg-brand-50/40">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-brand-700">
+                  From job feed
+                </p>
+                <p className="truncate font-semibold text-ink-900">
+                  {pendingJob.title} · {pendingJob.company}
+                </p>
+                <p className="text-xs text-ink-500">
+                  JD pre-filled — run match analysis, tailor your resume, then apply on the company site.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                {pendingJob.apply_url && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(pendingJob.apply_url, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLink className="h-4 w-4" /> Company Site
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={clearPendingJob}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Heading */}
+      <div className="space-y-2">
+        <Badge variant="success" className="text-[10px]"><Sparkles className="h-2.5 w-2.5" /> AI Workflow</Badge>
+        <h1 className="font-display text-3xl font-bold tracking-tightest text-ink-900 sm:text-4xl">
+          Prepare & <span className="gradient-text-brand">Apply</span>
+        </h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-ink-500">
+          Upload your profile, optionally guide the style with a reference resume, match against any job description, then generate a tailored PDF — all in one intelligent flow.
         </p>
       </div>
 
-      {/* Step progress */}
-      <div className="flex items-center gap-3 overflow-x-auto pb-1">
-        {(["profile", "jd", "match", "generate", "submit"] as Step[]).map((s, i) => (
-          <div key={s} className="flex items-center gap-2 shrink-0">
-            <StepIndicator step={s} current={currentStep} />
-            {i < 4 && <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />}
-          </div>
-        ))}
-      </div>
-
-      {/* Step 1: Profile Upload */}
+      {/* Step 1: Inputs */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-indigo-400" />
-              Step 1: Candidate Profile
+            <CardTitle className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Upload className="h-4 w-4" /></span>
+              Candidate Profile
             </CardTitle>
-            {profile && (
-              <Badge variant="success" dot>Profile loaded</Badge>
-            )}
+            {profile && <Badge variant="success" dot>Profile loaded</Badge>}
           </div>
         </CardHeader>
         <CardContent>
           {profile ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-4"
-            >
-              <div className="flex items-center gap-4 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-lg font-bold text-white">
-                  {profile.name?.charAt(0) || "?"}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+              <div className="flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-teal-500 text-lg font-bold text-white">
+                  {profile.name?.charAt(0).toUpperCase() || "?"}
                 </div>
-                <div>
-                  <p className="font-semibold text-slate-100">{profile.name}</p>
-                  <p className="text-sm text-slate-400">{profile.email}</p>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {profile.domains.slice(0, 4).map((d) => (
-                      <Badge key={d} variant="purple">{d}</Badge>
-                    ))}
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-ink-900">{profile.name}</p>
+                  <p className="truncate text-sm text-ink-500">{profile.email}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {profile.domains.slice(0, 4).map((d) => <Badge key={d} variant="purple">{d}</Badge>)}
                   </div>
                 </div>
-                <button
-                  onClick={() => { setProfile(null); setResumeFile(null); setCurrentStep("profile"); }}
-                  className="ml-auto text-slate-500 hover:text-slate-300 p-1"
-                >
-                  <X className="w-4 h-4" />
+                <button onClick={() => { setProfile(null); setResumeFile(null); }} className="shrink-0 rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-slate-100 hover:text-ink-700 cursor-pointer" aria-label="Remove profile">
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-
               <div>
-                <p className="section-label mb-2">Skills ({profile.skills.length})</p>
+                <p className="section-label mb-2.5">Extracted Skills · {profile.skills.length}</p>
                 <div className="flex flex-wrap gap-2">
                   {profile.skills.slice(0, 20).map((s) => (
-                    <div key={s.name} className="flex items-center gap-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1">
-                      <span className="text-xs text-slate-300">{s.name}</span>
-                      <span className="text-[10px] text-indigo-400 font-bold">{s.confidence.toFixed(0)}%</span>
+                    <div key={s.name} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white/70 px-2.5 py-1">
+                      <span className="text-xs text-ink-700">{s.name}</span>
+                      <span className="text-[10px] font-bold text-brand-600 tabular-nums">{s.confidence.toFixed(0)}%</span>
                     </div>
                   ))}
-                  {profile.skills.length > 20 && (
-                    <span className="text-xs text-slate-500 py-1">+{profile.skills.length - 20} more</span>
-                  )}
+                  {profile.skills.length > 20 && <span className="py-1 text-xs text-ink-400">+{profile.skills.length - 20} more</span>}
                 </div>
               </div>
             </motion.div>
           ) : (
             <div className="space-y-4">
               <FileDropZone
-                onFile={setResumeFile}
-                file={resumeFile}
-                label="Drop your resume here or click to browse"
+                onFile={setResumeFile} file={resumeFile}
+                label="Drop your profile / resume here or click to browse"
+                hint="PDF, DOCX, TXT · Max 10MB"
+                accept={{
+                  "application/pdf": [".pdf"],
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+                  "text/plain": [".txt"],
+                }}
               />
-              <Button
-                onClick={handleUploadProfile}
-                disabled={!resumeFile}
-                loading={loading("upload")}
-                className="w-full"
-              >
-                <Upload className="w-4 h-4" />
-                {loading("upload") ? "Parsing with AI..." : "Parse Resume"}
+              <Button onClick={handleUploadProfile} disabled={!resumeFile} loading={loading("upload")} className="w-full">
+                <Upload className="h-4 w-4" />
+                {loading("upload") ? "Parsing with AI..." : "Parse Profile"}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Step 2: Job Description */}
-      <AnimatePresence>
-        {(profile || currentStep !== "profile") && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Briefcase className="w-5 h-5 text-indigo-400" />
-                  Step 2: Job Description
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="section-label block mb-1.5">Company</label>
-                    <input
-                      className="input-field"
-                      placeholder="e.g. Google"
-                      value={currentCompany}
-                      onChange={(e) => setCurrentCompany(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="section-label block mb-1.5">Role</label>
-                    <input
-                      className="input-field"
-                      placeholder="e.g. Senior Software Engineer"
-                      value={currentRole}
-                      onChange={(e) => setCurrentRole(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="section-label block mb-1.5">
-                    Job Description
-                  </label>
-                  <textarea
-                    className="input-field resize-none"
-                    rows={8}
-                    placeholder="Paste the full job description here..."
-                    value={currentJD}
-                    onChange={(e) => setCurrentJD(e.target.value)}
-                  />
-                </div>
-                <Button
-                  onClick={handleMatch}
-                  disabled={!currentJD.trim() || !profile}
-                  loading={loading("match")}
-                  className="w-full"
-                >
-                  <Zap className="w-4 h-4" />
-                  {loading("match") ? "Extracting & Matching Skills..." : "Extract Skills & Calculate Match"}
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Reference resume (optional) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600"><FileText className="h-4 w-4" /></span>
+              Reference Resume <span className="text-sm font-normal text-ink-400">· optional</span>
+            </CardTitle>
+            {referenceLoaded && <Badge variant="purple" dot>Reference loaded</Badge>}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {referenceLoaded ? (
+            <div className="flex items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100"><FileCheck2 className="h-5 w-5 text-violet-600" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-violet-700">{referenceName || "Reference resume"}</p>
+                <p className="text-xs text-ink-400">Style & structure will inspire your generated resume.</p>
+              </div>
+              <button onClick={handleRemoveReference} className="shrink-0 rounded-lg p-1.5 text-ink-400 hover:bg-white hover:text-ink-700 cursor-pointer" aria-label="Remove reference">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <FileDropZone
+              onFile={handleUploadReference} file={refFile}
+              label={loading("reference") ? "Reading style..." : "Drop a reference resume for style inspiration"}
+              hint="PDF, DOCX · We borrow structure & tone, never content"
+              tone="violet"
+              accept={{
+                "application/pdf": [".pdf"],
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+              }}
+            />
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Step 3: Match Results */}
+      {/* Step 2: JD */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Briefcase className="h-4 w-4" /></span>
+            Job Description
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="section-label mb-1.5 block">Company {currentMatch?.company && !currentCompany && <span className="text-brand-600">· auto</span>}</label>
+              <input className="input-field" placeholder="e.g. Google" value={currentCompany} onChange={(e) => setCurrentCompany(e.target.value)} />
+            </div>
+            <div>
+              <label className="section-label mb-1.5 block">Role</label>
+              <input className="input-field" placeholder="e.g. Senior Software Engineer" value={currentRole} onChange={(e) => setCurrentRole(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="section-label mb-1.5 block">Job Description</label>
+            <textarea className="input-field resize-none" rows={8} placeholder="Paste the full job description here..." value={currentJD} onChange={(e) => setCurrentJD(e.target.value)} />
+          </div>
+          <Button onClick={handleMatch} disabled={!currentJD.trim() || !profile} loading={loading("match")} className="w-full">
+            <Zap className="h-4 w-4" />
+            {loading("match") ? "Extracting & Matching..." : "Extract Skills & Calculate Match"}
+          </Button>
+          {!profile && (
+            <p className="flex items-center justify-center gap-1 text-xs text-amber-600">
+              <AlertCircle className="h-3 w-3" /> Upload your profile first.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Step 3: Match */}
       <AnimatePresence>
         {currentMatch && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="border-indigo-500/20">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}>
+            <Card glow className="border-brand-200">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="w-5 h-5 text-indigo-400" />
+                <CardTitle className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Target className="h-4 w-4" /></span>
                   Match Analysis
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Big match percentage */}
-                <div className="flex items-center gap-6">
-                  <div className="relative w-24 h-24 shrink-0">
-                    <svg className="w-24 h-24 -rotate-90" viewBox="0 0 80 80">
-                      <circle cx="40" cy="40" r="34" fill="none" stroke="#1e293b" strokeWidth="8" />
+                <div className="flex flex-col items-center gap-6 sm:flex-row">
+                  <div className="relative h-28 w-28 shrink-0">
+                    <svg className="h-28 w-28 -rotate-90" viewBox="0 0 80 80">
+                      <circle cx="40" cy="40" r="34" fill="none" stroke="#e2e8f0" strokeWidth="7" />
                       <motion.circle
                         cx="40" cy="40" r="34" fill="none"
-                        stroke={currentMatch.match_percentage >= 75 ? "#10b981" : currentMatch.match_percentage >= 50 ? "#f59e0b" : "#ef4444"}
-                        strokeWidth="8"
-                        strokeLinecap="round"
+                        stroke={currentMatch.match_percentage >= 75 ? "#10b981" : currentMatch.match_percentage >= 50 ? "#f59e0b" : "#f43f5e"}
+                        strokeWidth="7" strokeLinecap="round"
                         strokeDasharray={`${2 * Math.PI * 34}`}
                         initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
                         animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - currentMatch.match_percentage / 100) }}
-                        transition={{ duration: 1.5, ease: "easeOut" }}
+                        transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
                       />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <AnimatedCounter
-                        value={currentMatch.match_percentage}
-                        suffix="%"
-                        className={cn("text-xl font-black", getMatchColor(currentMatch.match_percentage))}
-                      />
+                      <AnimatedCounter value={currentMatch.match_percentage} suffix="%" className={cn("font-display text-2xl font-bold", getMatchColor(currentMatch.match_percentage))} />
                     </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-slate-100 font-semibold text-lg">
-                      {currentMatch.match_percentage >= 75
-                        ? "Strong Match!"
-                        : currentMatch.match_percentage >= 50
-                        ? "Moderate Match"
-                        : "Low Match"}
+                  <div className="flex-1 text-center sm:text-left">
+                    <p className="font-display text-xl font-semibold text-ink-900">
+                      {currentMatch.match_percentage >= 75 ? "Strong Match" : currentMatch.match_percentage >= 50 ? "Moderate Match" : "Low Match"}
                     </p>
-                    <p className="text-sm text-slate-400 mt-1">{currentMatch.recommendation}</p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{currentMatch.recommendation}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Matched skills */}
-                  <div>
-                    <p className="section-label mb-2 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Matched ({currentMatch.matched_skills.length})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {currentMatch.matched_skills.map((s) => (
-                        <Badge key={s} variant="success">{s}</Badge>
-                      ))}
-                    </div>
-                  </div>
+                {/* Editable Skills Required (PRD: editable list) */}
+                <div className="rounded-2xl border border-sky-100 bg-sky-50/50 p-4">
+                  <p className="section-label mb-2.5 flex items-center gap-1.5 text-sky-700"><ListChecks className="h-3.5 w-3.5" /> Skills Required (editable)</p>
+                  <EditableChips items={currentSkillsRequired} onChange={setCurrentSkillsRequired} tone="sky" />
+                </div>
 
-                  {/* Missing skills */}
-                  <div>
-                    <p className="section-label mb-2 flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
-                      Missing ({currentMatch.missing_skills.length})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {currentMatch.missing_skills.map((s) => (
-                        <Badge key={s} variant="danger">{s}</Badge>
-                      ))}
-                    </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                    <p className="section-label mb-2.5 flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Matched · {currentMatch.matched_skills.length}</p>
+                    <div className="flex flex-wrap gap-1.5">{currentMatch.matched_skills.map((s) => <Badge key={s} variant="success">{s}</Badge>)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4">
+                    <p className="section-label mb-2.5 flex items-center gap-1.5 text-rose-600"><AlertCircle className="h-3.5 w-3.5" /> Missing · {currentMatch.missing_skills.length}</p>
+                    <div className="flex flex-wrap gap-1.5">{currentMatch.missing_skills.map((s) => <Badge key={s} variant="danger">{s}</Badge>)}</div>
                   </div>
                 </div>
 
-                {/* Progress bar */}
                 <div>
-                  <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                    <span>Match score</span>
-                    <span>{currentMatch.match_percentage.toFixed(0)}%</span>
-                  </div>
+                  <div className="mb-2 flex justify-between text-xs text-ink-500"><span>Overall match score</span><span className="tabular-nums">{currentMatch.match_percentage.toFixed(0)}%</span></div>
                   <Progress value={currentMatch.match_percentage} colorByValue size="lg" />
                 </div>
-
-                {/* Generate resume */}
-                <Button
-                  onClick={handleGenerateResume}
-                  loading={loading("generate")}
-                  className="w-full"
-                >
-                  <Download className="w-4 h-4" />
-                  {loading("generate") ? "Generating Tailored Resume..." : "Generate & Download Tailored Resume"}
-                </Button>
               </CardContent>
             </Card>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Step 4+5: Submit */}
+      {/* Resume preview */}
+      <AnimatePresence>
+        {preview && (
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600"><Wand2 className="h-4 w-4" /></span>
+                  Tailored Resume Preview
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {preview.emphasis && (
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3.5 text-sm text-ink-700">{preview.emphasis}</div>
+                )}
+                <div>
+                  <p className="section-label mb-1.5">Tailored summary</p>
+                  <p className="text-sm leading-relaxed text-ink-600">{preview.tailored_summary}</p>
+                </div>
+                {preview.ordered_skills.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">Skills prioritized for this role</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preview.ordered_skills.slice(0, 14).map((s, i) => (
+                        <Badge key={s} variant={i < 5 ? "success" : "default"}>{s}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {preview.highlighted_projects.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">Highlighted projects</p>
+                    <div className="flex flex-wrap gap-1.5">{preview.highlighted_projects.map((p) => <Badge key={p} variant="info">{p}</Badge>)}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Step 4: Prepare + Submit (gated) */}
       <AnimatePresence>
         {currentMatch && !submitted && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <Card className="border-dashed border-amber-500/20 bg-amber-500/3">
-              <CardContent className="flex items-center gap-4 py-2">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
-                  <Upload className="w-5 h-5 text-amber-400" />
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}>
+            <Card>
+              <CardContent className="space-y-5">
+                {/* Activation checklist */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+                  <ChecklistItem done={c.profile} label="Profile" />
+                  <ChecklistItem done={c.jd} label="JD pasted" />
+                  <ChecklistItem done={c.company} label="Company" />
+                  <ChecklistItem done={c.role} label="Role" />
+                  <ChecklistItem done={c.skillsRequired} label="Skills required" />
+                  <ChecklistItem done={c.userSkills} label="Profile skills" />
+                  <ChecklistItem done={c.match} label="Match calculated" />
+                  <ChecklistItem done={resumeDownloaded} label="Resume downloaded" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-200">
-                    Applied externally?
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Once you submit on LinkedIn/Workday/company portal, click below to log it.
-                  </p>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button onClick={handleDownloadResume} disabled={!canPrepare} loading={loading("generate")} className="flex-1">
+                    <Download className="h-4 w-4" />
+                    {loading("generate") ? "Generating Resume..." : "Prepare & Download Resume"}
+                  </Button>
+                  <Button variant={canSubmit ? "primary" : "secondary"} onClick={handleSubmit} disabled={!canSubmit} loading={loading("submit")} className="flex-1">
+                    <CheckCircle2 className="h-4 w-4" /> Mark as Submitted
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={handleSubmit}
-                  loading={loading("submit")}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Mark as Submitted
-                </Button>
+                <p className="text-center text-xs text-ink-400">
+                  Apply on the company portal first, then click <span className="font-medium text-ink-600">Submitted</span> to log it. Submitted unlocks only after the resume is downloaded.
+                </p>
               </CardContent>
             </Card>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Success state */}
+      {/* Success */}
       <AnimatePresence>
         {submitted && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center py-8"
-          >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4"
-            >
-              <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-8 text-center">
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }} className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100">
+              <CheckCircle2 className="h-8 w-8 text-emerald-600" />
             </motion.div>
-            <h3 className="text-xl font-bold text-slate-100">Application Logged!</h3>
-            <p className="text-slate-400 text-sm mt-1 mb-6">
-              {currentCompany} → {currentRole} has been added to your tracker.
-            </p>
+            <h3 className="font-display text-xl font-bold text-ink-900">Application Logged</h3>
+            <p className="mb-6 mt-1 text-sm text-ink-500">{currentCompany} → {currentRole} has been added to your tracker.</p>
             <div className="flex items-center justify-center gap-3">
-              <Button onClick={() => { setActiveTab("tracking"); }}>
-                View in Tracker
-              </Button>
-              <Button variant="secondary" onClick={handleReset}>
-                <RefreshCw className="w-4 h-4" />
-                New Application
-              </Button>
+              <Button onClick={() => setActiveTab("tracking")}>View in Tracker</Button>
+              <Button variant="secondary" onClick={handleReset}><RefreshCw className="h-4 w-4" /> New Application</Button>
             </div>
           </motion.div>
         )}
