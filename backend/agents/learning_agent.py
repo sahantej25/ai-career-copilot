@@ -4,7 +4,7 @@ Analyzes rejection notes → updates profile confidence → generates global ins
 from datetime import datetime
 
 from models.schemas import (
-    CandidateProfile, RejectionNote, Application,
+    CandidateProfile, RejectionNote, Application, ApplicationStatus,
     ProfileUpdate, SkillChange, GlobalAnalysis, RadarDataPoint, AppData, Skill,
 )
 from services.guardrails import (
@@ -135,21 +135,30 @@ async def analyze_rejection(
     return update, profile, summary
 
 
+def collect_rejection_summaries(data: AppData) -> list[str]:
+    """Build analysis context from every not-selected application."""
+    rejection_by_app = {r.application_id: r for r in data.rejections}
+    summaries: list[str] = []
+    for app in data.applications:
+        if app.status != ApplicationStatus.not_selected:
+            continue
+        rej = rejection_by_app.get(app.id)
+        summaries.append(
+            f"Company: {app.company} | Role: {app.role} | "
+            f"Match: {app.match_percentage:.0f}% | "
+            f"Missing skills: {', '.join(app.missing_skills) or (rej.missing_skills if rej else '') or 'unknown'} | "
+            f"Topics struggled: {(rej.topics_struggled if rej else '') or '(not specified)'} | "
+            f"Recruiter feedback: {(rej.recruiter_feedback if rej else '') or '(not specified)'} | "
+            f"Notes: {(rej.notes if rej else app.notes) or '(none)'}"
+        )
+    return summaries
+
+
 async def build_global_analysis(data: AppData) -> GlobalAnalysis:
     """Aggregate patterns from all rejections and profile history."""
-    if not data.rejections:
+    rejection_summaries = collect_rejection_summaries(data)
+    if not rejection_summaries:
         return GlobalAnalysis()
-
-    rejection_summaries = []
-    for rej in data.rejections:
-        app = next((a for a in data.applications if a.id == rej.application_id), None)
-        if app:
-            rejection_summaries.append(
-                f"Company: {app.company} | Role: {app.role} | "
-                f"Missing skills: {', '.join(app.missing_skills)} | "
-                f"Topics struggled: {rej.topics_struggled} | "
-                f"Recruiter feedback: {rej.recruiter_feedback}"
-            )
 
     history_recs = [
         rec
@@ -159,7 +168,7 @@ async def build_global_analysis(data: AppData) -> GlobalAnalysis:
 
     ctx = (
         f"Total applications: {len(data.applications)}\n"
-        f"Total rejections analyzed: {len(data.rejections)}\n\n"
+        f"Total rejections: {len(rejection_summaries)}\n\n"
         f"Rejection details:\n" + "\n".join(rejection_summaries) +
         f"\n\nPast recommendations given:\n" + "\n".join(history_recs[:20])
     )

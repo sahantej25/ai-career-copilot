@@ -4,7 +4,7 @@ from datetime import datetime
 from deps.auth import bind_user_context
 from models.schemas import (
     Application, ApplicationStatus, UpdateStatusRequest,
-    TrackJobRequest, UpdateApplicationRequest,
+    TrackJobRequest, UpdateApplicationRequest, RejectionNote,
 )
 from services import storage_service as store
 
@@ -61,6 +61,18 @@ async def update_status(app_id: str, req: UpdateStatusRequest):
     app.status = req.status
     app.updated_at = datetime.utcnow().isoformat() + "Z"
     await store.upsert_application(app, status_note=f"Status → {req.status.value}")
+
+    if req.status == ApplicationStatus.not_selected:
+        data = await store.load_data()
+        if not any(r.application_id == app_id for r in data.rejections):
+            await store.upsert_rejection(
+                RejectionNote(
+                    application_id=app_id,
+                    missing_skills=", ".join(app.missing_skills),
+                    notes=app.notes or "",
+                )
+            )
+
     return app
 
 

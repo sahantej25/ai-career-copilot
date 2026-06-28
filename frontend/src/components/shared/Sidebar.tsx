@@ -40,7 +40,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode; description: stri
 ];
 
 export function Sidebar() {
-  const { activeTab, setActiveTab, applications } = useAppStore();
+  const { activeTab, setActiveTab, applications, profile, setProfileModalOpen } = useAppStore();
 
   const counts: Partial<Record<TabId, number>> = {
     tracking: applications.filter((a) => a.status !== "archived" && a.status !== "not_selected").length,
@@ -101,18 +101,28 @@ export function Sidebar() {
         );
       })}
 
-      {/* Footer hint card */}
+      {/* Footer hint card — opens profile editor */}
       <div className="mt-auto px-1">
-        <div className="glass glass-edge rounded-2xl p-4">
+        <button
+          type="button"
+          onClick={() => setProfileModalOpen(true)}
+          className="glass glass-edge glass-hover w-full rounded-2xl p-4 text-left transition-all cursor-pointer"
+        >
           <div className="mb-2 flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-brand-600" />
             <span className="text-xs font-semibold text-ink-800">Living Profile</span>
+            {profile && (
+              <span className="ml-auto rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                Active
+              </span>
+            )}
           </div>
           <p className="text-xs leading-relaxed text-ink-500">
-            Powered by GPT-4o. Every rejection sharpens your profile, stored locally in{" "}
-            <span className="font-mono text-ink-600">data.json</span>.
+            {profile
+              ? `${profile.name || "Candidate"} · ${profile.skills.length} skills — click to edit`
+              : "Add your candidate details to unlock matching, resume tailoring, and insights."}
           </p>
-        </div>
+        </button>
       </div>
     </aside>
   );
