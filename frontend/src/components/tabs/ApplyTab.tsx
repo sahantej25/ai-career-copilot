@@ -255,33 +255,11 @@ export function ApplyTab() {
       a.click();
       URL.revokeObjectURL(url);
       setResumeDownloaded(true);
-      addToast({ type: "success", message: "Tailored PDF resume downloaded (LaTeX → PDF)!" });
+      addToast({ type: "success", message: "Tailored PDF resume downloaded!" });
     } catch (e: any) {
       addToast({ type: "error", message: e.message });
     } finally {
       setLoading("generate", false);
-    }
-  };
-
-  const handleDownloadDocx = async () => {
-    setLoading("generateDocx", true);
-    const jd = sanitizeUserInput(currentJD, INPUT_LIMITS.jobDescription);
-    const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
-    const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
-    try {
-      const blob = await api.generateResumeDocx(jd, company, role, currentSkillsRequired, currentMatch);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `resume_${currentCompany.replace(/\s+/g, "_") || "tailored"}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setResumeDownloaded(true);
-      addToast({ type: "success", message: "Tailored DOCX resume downloaded!" });
-    } catch (e: any) {
-      addToast({ type: "error", message: e.message });
-    } finally {
-      setLoading("generateDocx", false);
     }
   };
 
@@ -740,13 +718,9 @@ export function ApplyTab() {
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button onClick={handleDownloadResume} disabled={!canPrepare || loading("generateDocx")} loading={loading("generate")} className="flex-1">
+                  <Button onClick={handleDownloadResume} disabled={!canPrepare} loading={loading("generate")} className="flex-1">
                     <Download className="h-4 w-4" />
-                    {loading("generate") ? "Generating PDF..." : "Download PDF (LaTeX)"}
-                  </Button>
-                  <Button variant="secondary" onClick={handleDownloadDocx} disabled={!canPrepare || loading("generate")} loading={loading("generateDocx")} className="flex-1">
-                    <FileText className="h-4 w-4" />
-                    {loading("generateDocx") ? "Generating DOCX..." : "Download DOCX"}
+                    {loading("generate") ? "Generating PDF..." : "Download PDF Resume"}
                   </Button>
                   <Button variant={canSubmit ? "primary" : "secondary"} onClick={handleSubmit} disabled={!canSubmit} loading={loading("submit")} className="flex-1">
                     <CheckCircle2 className="h-4 w-4" /> Mark as Submitted

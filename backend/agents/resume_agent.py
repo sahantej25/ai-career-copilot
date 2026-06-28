@@ -1,5 +1,5 @@
 """Agent 3 – Resume Generation Agent
-Multi-agent pipeline → LaTeX source → PDF (pdflatex) or DOCX export.
+Multi-agent pipeline → LaTeX source → PDF via PyLaTeX.
 """
 from typing import Optional
 
@@ -11,7 +11,6 @@ from models.schemas import (
     ResumeStyle,
 )
 from agents.resume_pipeline import run_resume_pipeline
-from services.docx_service import generate_docx_from_package
 from services.latex_service import generate_resume_pdf_from_package
 
 
@@ -41,17 +40,3 @@ async def generate_tailored_resume(
         profile, package, accent_hex=accent, latex_source=package.latex_source,
     )
     return pdf_bytes, latex_source
-
-
-async def generate_tailored_docx(
-    profile: CandidateProfile,
-    job_description: str,
-    style: Optional[ResumeStyle] = None,
-    match: Optional[MatchContextInput] = None,
-    original: Optional[ResumeSnapshot] = None,
-) -> bytes:
-    package = await build_resume_package(
-        profile, job_description, style, match, original,
-    )
-    accent = style.accent_hex if style else "#10b981"
-    return generate_docx_from_package(profile, package, accent_hex=accent)
