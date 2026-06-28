@@ -1,18 +1,28 @@
-import os
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import Response
 
 from config import settings
+from deps.auth import bind_user_context
 from models.schemas import (
-    MatchRequest, MatchResponse, GenerateResumeRequest,
+    MatchRequest, MatchResponse, GenerateResumeRequest, ResumePreviewResponse,
     SubmitApplicationRequest, Application, AppData,
 )
-from agents.profile_agent import parse_resume
+from agents.profile_agent import parse_resume, extract_resume_style
 from agents.job_matching_agent import match_job
-from agents.resume_agent import generate_tailored_resume
+from agents.resume_agent import generate_tailored_resume, build_resume_package
 from services import storage_service as store
 
-router = APIRouter(prefix="/api/apply", tags=["apply"])
+router = APIRouter(prefix="/api/apply", tags=["apply"], dependencies=[Depends(bind_user_context)])
+
+_ALLOWED_EXT = {"pdf", "docx", "doc", "txt"}
+
+
+def _check_file(file: UploadFile, content: bytes, allowed: set[str]) -> None:
+    if len(content) > settings.max_file_size_mb * 1024 * 1024:
+        raise HTTPException(413, f"File exceeds {settings.max_file_size_mb}MB limit.")
+    ext = (file.filename or "").lower().rsplit(".", 1)[-1]
+    if ext not in allowed:
+        raise HTTPException(415, f"Unsupported file type '.{ext}'. Allowed: {', '.join(sorted(allowed))}.")
 
 
 async def _require_profile() -> AppData:
@@ -24,15 +34,14 @@ async def _require_profile() -> AppData:
 
 @router.post("/upload-profile")
 async def upload_profile(file: UploadFile = File(...)):
-    """Parse uploaded resume and store as current_profile_state."""
+    """Parse uploaded candidate profile → store as current_profile_state."""
     content = await file.read()
-    if len(content) > settings.max_file_size_mb * 1024 * 1024:
-        raise HTTPException(413, f"File exceeds {settings.max_file_size_mb}MB limit.")
+    _check_file(file, content, _ALLOWED_EXT)
 
     try:
         profile = await parse_resume(content, file.filename or "resume.pdf")
     except Exception as e:
-        raise HTTPException(422, f"Failed to parse resume: {e}")
+        raise HTTPException(422, f"Failed to parse profile: {e}")
 
     data = await store.load_data()
     data.current_profile_state = profile
@@ -40,23 +49,69 @@ async def upload_profile(file: UploadFile = File(...)):
     return {"message": "Profile parsed successfully", "profile": profile}
 
 
+@router.post("/upload-reference")
+async def upload_reference(file: UploadFile = File(...)):
+    """Optional reference resume → extract STYLE only (never content)."""
+    content = await file.read()
+    _check_file(file, content, {"pdf", "docx", "doc"})
+
+    try:
+        style = await extract_resume_style(content, file.filename or "reference.pdf")
+    except Exception as e:
+        raise HTTPException(422, f"Failed to read reference resume: {e}")
+
+    data = await store.load_data()
+    data.resume_style = style
+    data.reference_resume_loaded = True
+    data.reference_resume_name = file.filename or "reference"
+    await store.save_data(data)
+    return {"message": "Reference resume style captured", "style": style, "name": data.reference_resume_name}
+
+
+@router.delete("/reference")
+async def remove_reference():
+    data = await store.load_data()
+    data.resume_style = None
+    data.reference_resume_loaded = False
+    data.reference_resume_name = ""
+    await store.save_data(data)
+    return {"message": "Reference resume removed; default template will be used."}
+
+
 @router.post("/match", response_model=MatchResponse)
 async def match_against_profile(req: MatchRequest, data: AppData = Depends(_require_profile)):
     try:
-        result = await match_job(data.current_profile_state, req.job_description)
+        result = await match_job(
+            data.current_profile_state, req.job_description,
+            company_hint=req.company, role_hint=req.role,
+        )
     except Exception as e:
         raise HTTPException(500, f"Matching failed: {e}")
     return result
 
 
+@router.post("/resume-preview", response_model=ResumePreviewResponse)
+async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
+    """Preview what the tailored resume will emphasize (no PDF)."""
+    try:
+        return await build_resume_package(
+            data.current_profile_state, req.job_description, data.resume_style
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Preview failed: {e}")
+
+
 @router.post("/generate-resume")
 async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
     try:
-        pdf_bytes = await generate_tailored_resume(data.current_profile_state, req.job_description)
+        pdf_bytes = await generate_tailored_resume(
+            data.current_profile_state, req.job_description, data.resume_style
+        )
     except Exception as e:
         raise HTTPException(500, f"Resume generation failed: {e}")
 
-    filename = f"resume_{req.company.replace(' ', '_') or 'tailored'}.pdf"
+    safe = (req.company or "tailored").replace(" ", "_")
+    filename = f"resume_{safe}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -74,6 +129,11 @@ async def submit_application(req: SubmitApplicationRequest):
         matched_skills=req.matched_skills,
         missing_skills=req.missing_skills,
         resume_filename=req.resume_filename,
+        apply_url=req.apply_url,
+        source=req.source,
+        external_job_id=req.external_job_id,
+        notes=req.notes,
+        status=req.status,
     )
     await store.upsert_application(app)
     return app

@@ -31,6 +31,7 @@ _GLOBAL_SYSTEM = """You are a career strategist analyzing patterns across multip
 Given a list of rejections with their skill gaps and recommendations, identify macro patterns.
 Return ONLY valid JSON:
 {
+  "summary": "A plain-language paragraph (3-5 sentences) telling the candidate what to focus on improving before their next round of applications.",
   "recurring_missing_skills": ["Docker", "System Design"],
   "common_interview_topics": ["Behavioral questions", "System design"],
   "frequent_weaknesses": ["Distributed systems", "Cloud infrastructure"],
@@ -54,24 +55,32 @@ async def analyze_rejection(
     profile: CandidateProfile,
     rejection: RejectionNote,
     application: Application,
-) -> tuple[ProfileUpdate, CandidateProfile]:
-    """Returns (ProfileUpdate, updated CandidateProfile)."""
+) -> tuple[ProfileUpdate, CandidateProfile, str]:
+    """Returns (ProfileUpdate, updated CandidateProfile, summary)."""
     skill_snapshot = [
         {"name": s.name, "confidence": s.confidence, "category": s.category}
         for s in profile.skills
     ]
+    # The free-text notes are the primary signal; structured fields are supplementary.
+    structured = "\n".join(
+        f"{label}: {val}"
+        for label, val in [
+            ("Interview experience", rejection.interview_experience),
+            ("Rejection email", rejection.rejection_email),
+            ("Topics struggled", rejection.topics_struggled),
+            ("Missing skills (candidate noted)", rejection.missing_skills),
+            ("Recruiter feedback", rejection.recruiter_feedback),
+        ]
+        if val
+    )
     ctx = (
         f"Company: {application.company}\n"
         f"Role: {application.role}\n"
         f"Match was: {application.match_percentage:.0f}%\n"
         f"Missing skills identified at apply-time: {', '.join(application.missing_skills)}\n\n"
         f"Current skill profile:\n{skill_snapshot}\n\n"
-        f"Rejection feedback:\n"
-        f"Interview experience: {rejection.interview_experience}\n"
-        f"Rejection email: {rejection.rejection_email}\n"
-        f"Topics struggled: {rejection.topics_struggled}\n"
-        f"Missing skills (candidate noted): {rejection.missing_skills}\n"
-        f"Recruiter feedback: {rejection.recruiter_feedback}"
+        f"Candidate's rejection notes (free text):\n{rejection.notes or '(none)'}\n\n"
+        f"Additional structured details:\n{structured or '(none)'}"
     )
 
     data = await chat_json(_REJECTION_SYSTEM, ctx)
@@ -111,7 +120,11 @@ async def analyze_rejection(
         recommendations=data.get("recommendations", []),
     )
 
-    return update, profile
+    summary = data.get("summary", "") or (
+        f"Profile updated based on the rejection from {application.company}."
+    )
+
+    return update, profile, summary
 
 
 async def build_global_analysis(data: AppData) -> GlobalAnalysis:
@@ -161,6 +174,7 @@ async def build_global_analysis(data: AppData) -> GlobalAnalysis:
     ]
 
     return GlobalAnalysis(
+        summary=result.get("summary", ""),
         recurring_missing_skills=result.get("recurring_missing_skills", []),
         common_interview_topics=result.get("common_interview_topics", []),
         frequent_weaknesses=result.get("frequent_weaknesses", []),
