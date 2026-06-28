@@ -229,6 +229,12 @@ class MatchRequest(BaseModel):
         return sanitize_company_role(v)
 
 
+class MatchStep(BaseModel):
+    step: int
+    title: str
+    summary: str
+
+
 class MatchResponse(BaseModel):
     match_percentage: float
     matched_skills: list[str]
@@ -237,6 +243,29 @@ class MatchResponse(BaseModel):
     recommendation: str
     company: str = ""
     role: str = ""
+    matching_steps: list[MatchStep] = []
+    experience_highlights: list[str] = []
+    score_breakdown: dict[str, float] = {}
+
+
+class MatchContextInput(BaseModel):
+    """Prior match analysis passed into resume tailoring."""
+    match_percentage: float = 0.0
+    matched_skills: list[str] = []
+    missing_skills: list[str] = []
+    job_required_skills: list[str] = []
+    experience_highlights: list[str] = []
+    score_breakdown: dict[str, float] = {}
+
+    @field_validator("match_percentage")
+    @classmethod
+    def _clamp_match(cls, v: float) -> float:
+        return clamp_percentage(v)
+
+    @field_validator("matched_skills", "missing_skills", "job_required_skills", "experience_highlights")
+    @classmethod
+    def _sanitize_lists(cls, v: list[str]) -> list[str]:
+        return sanitize_string_list(v)
 
 
 class GenerateResumeRequest(BaseModel):
@@ -244,6 +273,7 @@ class GenerateResumeRequest(BaseModel):
     company: str = ""
     role: str = ""
     skills_required: list[str] = []
+    match_context: Optional["MatchContextInput"] = None
 
     @field_validator("job_description")
     @classmethod
@@ -264,12 +294,21 @@ class GenerateResumeRequest(BaseModel):
         return sanitize_string_list(v)
 
 
+class TailoredExperienceEntry(BaseModel):
+    company: str
+    role: str
+    duration: str
+    bullets: list[str] = []
+
+
 class ResumePreviewResponse(BaseModel):
     tailored_summary: str
     ordered_skills: list[str]
     highlighted_projects: list[str] = []
     key_achievements: list[str] = []
     emphasis: str = ""
+    tailored_experience: list[TailoredExperienceEntry] = []
+    tailoring_steps: list[MatchStep] = []
 
 
 class SubmitApplicationRequest(BaseModel):

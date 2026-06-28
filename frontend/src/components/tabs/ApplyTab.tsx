@@ -219,7 +219,10 @@ export function ApplyTab() {
       addToast({ type: "success", message: "Skills extracted & match calculated!" });
       // Auto-load resume preview (what it will emphasize)
       try {
-        const pv = await api.resumePreview(jd, result.company || company, result.role || role, result.job_required_skills || []);
+        const pv = await api.resumePreview(
+          jd, result.company || company, result.role || role,
+          result.job_required_skills || [], result,
+        );
         setPreview(pv);
       } catch { /* preview is best-effort */ }
     } catch (e: any) {
@@ -235,7 +238,7 @@ export function ApplyTab() {
     const company = sanitizeUserInput(currentCompany, INPUT_LIMITS.companyRole);
     const role = sanitizeUserInput(currentRole, INPUT_LIMITS.companyRole);
     try {
-      const blob = await api.generateResume(jd, company, role, currentSkillsRequired);
+      const blob = await api.generateResume(jd, company, role, currentSkillsRequired, currentMatch);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -461,7 +464,7 @@ export function ApplyTab() {
           </div>
           <Button onClick={handleMatch} disabled={!currentJD.trim() || !profile} loading={loading("match")} className="w-full">
             <Zap className="h-4 w-4" />
-            {loading("match") ? "Extracting & Matching..." : "Extract Skills & Calculate Match"}
+            {loading("match") ? "Analyzing fit (3 steps)..." : "Analyze Profile vs Job Description"}
           </Button>
           {!profile && (
             <p className="flex items-center justify-center gap-1 text-xs text-amber-600">
@@ -508,6 +511,45 @@ export function ApplyTab() {
                     <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{currentMatch.recommendation}</p>
                   </div>
                 </div>
+
+                {currentMatch.score_breakdown && Object.keys(currentMatch.score_breakdown).length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {Object.entries(currentMatch.score_breakdown).map(([key, val]) => (
+                      <div key={key} className="rounded-xl border border-slate-200 bg-white/60 px-3 py-2.5 text-center">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">{key}</p>
+                        <p className={cn("font-display text-lg font-bold tabular-nums", getMatchColor(val))}>{val.toFixed(0)}%</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {currentMatch.matching_steps && currentMatch.matching_steps.length > 0 && (
+                  <div className="rounded-2xl border border-brand-100 bg-brand-50/40 p-4">
+                    <p className="section-label mb-3 text-brand-700">Step-by-step analysis</p>
+                    <ol className="space-y-2">
+                      {currentMatch.matching_steps.map((step) => (
+                        <li key={step.step} className="flex gap-3 text-sm">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[11px] font-bold text-white">{step.step}</span>
+                          <div>
+                            <p className="font-medium text-ink-800">{step.title}</p>
+                            <p className="text-xs leading-relaxed text-ink-500">{step.summary}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {currentMatch.experience_highlights && currentMatch.experience_highlights.length > 0 && (
+                  <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4">
+                    <p className="section-label mb-2 text-violet-700">Strongest experience for this role</p>
+                    <ul className="space-y-1.5 text-sm text-ink-600">
+                      {currentMatch.experience_highlights.map((h) => (
+                        <li key={h} className="flex gap-2"><span className="text-violet-500">•</span>{h}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Editable Skills Required (PRD: editable list) */}
                 <div className="rounded-2xl border border-sky-100 bg-sky-50/50 p-4">
@@ -569,6 +611,43 @@ export function ApplyTab() {
                   <div>
                     <p className="section-label mb-2">Highlighted projects</p>
                     <div className="flex flex-wrap gap-1.5">{preview.highlighted_projects.map((p) => <Badge key={p} variant="info">{p}</Badge>)}</div>
+                  </div>
+                )}
+                {preview.key_achievements && preview.key_achievements.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">Key achievements for this role</p>
+                    <ul className="space-y-1 text-sm text-ink-600">
+                      {preview.key_achievements.map((a) => (
+                        <li key={a} className="flex gap-2"><span className="text-brand-500">•</span>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {preview.tailoring_steps && preview.tailoring_steps.length > 0 && (
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-3.5">
+                    <p className="section-label mb-2 text-violet-700">Tailoring steps</p>
+                    <ol className="space-y-1.5">
+                      {preview.tailoring_steps.map((step) => (
+                        <li key={step.step} className="text-xs text-ink-600">
+                          <span className="font-semibold text-ink-800">{step.title}:</span> {step.summary}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {preview.tailored_experience && preview.tailored_experience.length > 0 && (
+                  <div>
+                    <p className="section-label mb-2">Tailored experience (preview)</p>
+                    <div className="space-y-3">
+                      {preview.tailored_experience.slice(0, 2).map((exp) => (
+                        <div key={`${exp.company}-${exp.role}`} className="rounded-lg border border-slate-200 bg-white/50 p-3">
+                          <p className="text-sm font-semibold text-ink-800">{exp.role} · {exp.company}</p>
+                          <ul className="mt-1.5 space-y-1 text-xs text-ink-500">
+                            {exp.bullets.slice(0, 2).map((b) => <li key={b}>• {b}</li>)}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
