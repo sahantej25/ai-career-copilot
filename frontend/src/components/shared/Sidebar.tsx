@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import {
-  Send, LayoutDashboard, XCircle, BarChart3, ChevronRight,
+  Compass, Send, LayoutDashboard, XCircle, BarChart3, Sparkles,
 } from "lucide-react";
 import { useAppStore } from "@/hooks/useAppStore";
 import { cn } from "@/lib/utils";
@@ -8,27 +8,33 @@ import type { TabId } from "@/types";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode; description: string }[] = [
   {
+    id: "discover",
+    label: "Discover",
+    icon: <Compass className="h-[18px] w-[18px]" />,
+    description: "Matched job feed",
+  },
+  {
     id: "apply",
     label: "Apply",
-    icon: <Send className="w-5 h-5" />,
+    icon: <Send className="h-[18px] w-[18px]" />,
     description: "Prepare & submit",
   },
   {
     id: "tracking",
     label: "Tracking",
-    icon: <LayoutDashboard className="w-5 h-5" />,
+    icon: <LayoutDashboard className="h-[18px] w-[18px]" />,
     description: "Application pipeline",
   },
   {
     id: "not-selected",
     label: "Not Selected",
-    icon: <XCircle className="w-5 h-5" />,
+    icon: <XCircle className="h-[18px] w-[18px]" />,
     description: "Learn from rejections",
   },
   {
     id: "global-analysis",
     label: "Global Analysis",
-    icon: <BarChart3 className="w-5 h-5" />,
+    icon: <BarChart3 className="h-[18px] w-[18px]" />,
     description: "Patterns & insights",
   },
 ];
@@ -37,12 +43,13 @@ export function Sidebar() {
   const { activeTab, setActiveTab, applications } = useAppStore();
 
   const counts: Partial<Record<TabId, number>> = {
-    tracking: applications.length,
+    tracking: applications.filter((a) => a.status !== "archived" && a.status !== "not_selected").length,
     "not-selected": applications.filter((a) => a.status === "not_selected").length,
   };
 
   return (
-    <aside className="w-64 shrink-0 hidden lg:flex flex-col gap-1 pt-6 px-3">
+    <aside className="hidden w-64 shrink-0 flex-col gap-1.5 py-6 pr-3 lg:flex">
+      <p className="section-label px-4 pb-2">Workspace</p>
       {TABS.map((tab) => {
         const isActive = activeTab === tab.id;
         const count = counts[tab.id];
@@ -51,59 +58,61 @@ export function Sidebar() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "relative flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 group",
-              isActive
-                ? "bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 text-white"
-                : "hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 border border-transparent"
+              "group relative flex items-center gap-3 rounded-xl px-3.5 py-3 text-left transition-all duration-200 ease-out-expo cursor-pointer",
+              isActive ? "text-ink-900" : "text-ink-500 hover:text-ink-800"
             )}
           >
             {isActive && (
               <motion.div
                 layoutId="sidebar-active"
-                className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600/10 to-purple-600/10"
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              />
+                className="absolute inset-0 rounded-xl border border-slate-200/80 bg-white/80 shadow-soft"
+                transition={{ type: "spring", stiffness: 380, damping: 32 }}
+              >
+                <span className="absolute left-0 top-1/2 h-6 -translate-y-1/2 w-[3px] rounded-r-full bg-gradient-to-b from-brand-500 to-teal-500" />
+              </motion.div>
             )}
             <span
               className={cn(
-                "relative z-10 transition-colors",
-                isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-indigo-400"
+                "relative z-10 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200",
+                isActive
+                  ? "bg-gradient-to-br from-brand-100 to-teal-100 text-brand-700"
+                  : "bg-slate-100 text-ink-400 group-hover:text-brand-600"
               )}
             >
               {tab.icon}
             </span>
-            <div className="relative z-10 flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold truncate">{tab.label}</span>
+            <div className="relative z-10 min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-semibold">{tab.label}</span>
                 {count !== undefined && count > 0 && (
                   <span
                     className={cn(
-                      "text-xs font-bold px-1.5 py-0.5 rounded-md",
-                      isActive
-                        ? "bg-indigo-500/30 text-indigo-300"
-                        : "bg-slate-700 text-slate-400"
+                      "rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                      isActive ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-ink-500"
                     )}
                   >
                     {count}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 truncate">{tab.description}</p>
+              <p className="truncate text-xs text-ink-400">{tab.description}</p>
             </div>
-            {isActive && (
-              <ChevronRight className="w-3.5 h-3.5 text-indigo-400 relative z-10 shrink-0" />
-            )}
           </button>
         );
       })}
 
-      {/* Divider + hint */}
-      <div className="mt-auto mb-6 px-4">
-        <div className="h-px bg-slate-800 mb-4" />
-        <p className="text-xs text-slate-600 leading-relaxed">
-          Powered by GPT-4o. All data stored locally in{" "}
-          <span className="font-mono text-slate-500">data.json</span>
-        </p>
+      {/* Footer hint card */}
+      <div className="mt-auto px-1">
+        <div className="glass glass-edge rounded-2xl p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-brand-600" />
+            <span className="text-xs font-semibold text-ink-800">Living Profile</span>
+          </div>
+          <p className="text-xs leading-relaxed text-ink-500">
+            Powered by GPT-4o. Every rejection sharpens your profile, stored locally in{" "}
+            <span className="font-mono text-ink-600">data.json</span>.
+          </p>
+        </div>
       </div>
     </aside>
   );
@@ -114,15 +123,16 @@ export function MobileTabBar() {
   const { activeTab, setActiveTab } = useAppStore();
 
   const mobileTabs = [
-    { id: "apply" as TabId, label: "Apply", icon: <Send className="w-5 h-5" /> },
-    { id: "tracking" as TabId, label: "Track", icon: <LayoutDashboard className="w-5 h-5" /> },
-    { id: "not-selected" as TabId, label: "Rejected", icon: <XCircle className="w-5 h-5" /> },
-    { id: "global-analysis" as TabId, label: "Insights", icon: <BarChart3 className="w-5 h-5" /> },
+    { id: "discover" as TabId, label: "Discover", icon: <Compass className="h-5 w-5" /> },
+    { id: "apply" as TabId, label: "Apply", icon: <Send className="h-5 w-5" /> },
+    { id: "tracking" as TabId, label: "Track", icon: <LayoutDashboard className="h-5 w-5" /> },
+    { id: "not-selected" as TabId, label: "Rejected", icon: <XCircle className="h-5 w-5" /> },
+    { id: "global-analysis" as TabId, label: "Insights", icon: <BarChart3 className="h-5 w-5" /> },
   ];
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/60">
-      <div className="flex">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/80 backdrop-blur-2xl lg:hidden">
+      <div className="mx-auto flex max-w-md">
         {mobileTabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -130,10 +140,17 @@ export function MobileTabBar() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors",
-                isActive ? "text-indigo-400" : "text-slate-500"
+                "relative flex flex-1 flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors cursor-pointer",
+                isActive ? "text-brand-600" : "text-ink-400"
               )}
             >
+              {isActive && (
+                <motion.span
+                  layoutId="mobile-active"
+                  className="absolute top-0 h-0.5 w-8 rounded-full bg-gradient-to-r from-brand-500 to-teal-500"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
               {tab.icon}
               {tab.label}
             </button>

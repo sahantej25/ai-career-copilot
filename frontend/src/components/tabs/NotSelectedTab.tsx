@@ -10,113 +10,182 @@ import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { AIThinkingAnimation } from "@/components/ui/Spinner";
 import { useAppStore } from "@/hooks/useAppStore";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime, getMatchColor } from "@/lib/utils";
 import * as api from "@/lib/api";
 import type { Application, SkillChange, ProfileUpdate } from "@/types";
+
+interface RowAnalysis {
+  summary: string;
+  skill_changes: SkillChange[];
+  recommendations: string[];
+}
 
 function SkillChangeRow({ change }: { change: SkillChange }) {
   const delta = change.new_confidence - change.previous_confidence;
   const isDown = delta < 0;
-
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="flex items-center gap-3 p-3 bg-slate-800/40 rounded-xl"
-    >
-      <div className={cn(
-        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-        isDown ? "bg-red-500/15" : "bg-emerald-500/15"
-      )}>
-        {isDown
-          ? <TrendingDown className="w-4 h-4 text-red-400" />
-          : <TrendingUp className="w-4 h-4 text-emerald-400" />
-        }
+    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/60 p-3">
+      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", isDown ? "bg-rose-50" : "bg-emerald-50")}>
+        {isDown ? <TrendingDown className="h-4 w-4 text-rose-500" /> : <TrendingUp className="h-4 w-4 text-emerald-500" />}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-200">{change.skill}</span>
-          <span className={cn(
-            "text-xs font-bold",
-            isDown ? "text-red-400" : "text-emerald-400"
-          )}>
-            {delta > 0 ? "+" : ""}{delta.toFixed(0)}%
-          </span>
+          <span className="text-sm font-semibold text-ink-800">{change.skill}</span>
+          <span className={cn("text-xs font-bold tabular-nums", isDown ? "text-rose-500" : "text-emerald-600")}>{delta > 0 ? "+" : ""}{delta.toFixed(0)}%</span>
         </div>
-        <p className="text-xs text-slate-500 truncate">{change.reason}</p>
+        <p className="truncate text-xs text-ink-400">{change.reason}</p>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-xs text-slate-500">{change.previous_confidence.toFixed(0)}%</span>
-        <span className="text-slate-600">→</span>
-        <span className={cn("text-xs font-bold", isDown ? "text-red-400" : "text-emerald-400")}>
-          {change.new_confidence.toFixed(0)}%
-        </span>
+      <div className="flex shrink-0 items-center gap-1 text-xs tabular-nums">
+        <span className="text-ink-400">{change.previous_confidence.toFixed(0)}%</span>
+        <span className="text-ink-300">→</span>
+        <span className={cn("font-bold", isDown ? "text-rose-500" : "text-emerald-600")}>{change.new_confidence.toFixed(0)}%</span>
       </div>
     </motion.div>
   );
 }
 
-function ProfileUpdateCard({ update }: { update: ProfileUpdate }) {
-  const [expanded, setExpanded] = useState(false);
+function RejectionRow({ app, onAnalyzed }: { app: Application; onAnalyzed: () => void }) {
+  const { profile, setProfile, isLoading, setLoading, addToast } = useAppStore();
+  const [notes, setNotes] = useState("");
+  const [result, setResult] = useState<RowAnalysis | null>(null);
+  const busy = isLoading[`analyze-${app.id}`];
+
+  // Load any previously saved rejection note/summary for this row.
+  useEffect(() => {
+    api.getRejection(app.id)
+      .then((r) => {
+        if (r.notes) setNotes(r.notes);
+        if (r.summary) setResult((prev) => prev ?? { summary: r.summary || "", skill_changes: [], recommendations: [] });
+      })
+      .catch(() => { /* none yet */ });
+  }, [app.id]);
+
+  const analyze = async () => {
+    if (!profile) { addToast({ type: "error", message: "Upload a profile first." }); return; }
+    setLoading(`analyze-${app.id}`, true);
+    setResult(null);
+    try {
+      const res = await api.analyzeRejection({ application_id: app.id, notes });
+      setResult({ summary: res.summary, skill_changes: res.skill_changes, recommendations: res.recommendations });
+      // refresh living profile
+      try {
+        const data = await api.getAllData();
+        if (data.current_profile_state) setProfile(data.current_profile_state);
+      } catch { /* ignore */ }
+      addToast({ type: "success", message: `Analyzed rejection from ${app.company}.` });
+      onAnalyzed();
+    } catch (e: any) {
+      addToast({ type: "error", message: e.message });
+    } finally {
+      setLoading(`analyze-${app.id}`, false);
+    }
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass-card"
-    >
-      <button
-        className="w-full flex items-center justify-between p-4 text-left"
-        onClick={() => setExpanded(!expanded)}
-      >
+    <Card>
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center">
-            <Brain className="w-4 h-4 text-purple-400" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 text-sm font-bold text-ink-600">
+            {app.company?.charAt(0).toUpperCase() || "?"}
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-200">
-              Profile updated after {update.company}
-            </p>
-            <p className="text-xs text-slate-500">{formatRelativeTime(update.timestamp)}</p>
+            <p className="font-semibold text-ink-900">{app.company || "Unknown"}</p>
+            <p className="text-xs text-ink-400">{app.role || "—"}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="section-label">Experience Match</p>
+          <p className={cn("font-display text-lg font-bold tabular-nums", getMatchColor(app.match_percentage))}>{app.match_percentage.toFixed(0)}%</p>
+        </div>
+      </div>
+
+      <label className="section-label mb-1.5 block">Rejection Notes</label>
+      <textarea
+        className="input-field resize-none"
+        rows={4}
+        placeholder="Write freely: interview experience, questions you couldn't answer, topics you felt weak in, the rejection email, recruiter feedback, anything you observed..."
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        {app.missing_skills.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {app.missing_skills.slice(0, 4).map((s) => <Badge key={s} variant="danger" className="text-[10px]">{s}</Badge>)}
+          </div>
+        )}
+        <Button onClick={analyze} disabled={!notes.trim() || busy} loading={busy} className="ml-auto">
+          <Brain className="h-4 w-4" /> {busy ? "Analyzing..." : "Analyze"}
+        </Button>
+      </div>
+
+      <AnimatePresence>
+        {busy && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <AIThinkingAnimation label="Learning from this rejection..." />
+          </motion.div>
+        )}
+        {result && !busy && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+            {result.summary && (
+              <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3.5">
+                <p className="section-label mb-1 flex items-center gap-1.5 text-brand-700"><Sparkles className="h-3.5 w-3.5" /> Analysis</p>
+                <p className="text-sm leading-relaxed text-ink-700">{result.summary}</p>
+              </div>
+            )}
+            {result.skill_changes.length > 0 && (
+              <div className="space-y-2">
+                <p className="section-label">Profile changes</p>
+                {result.skill_changes.map((c, i) => <SkillChangeRow key={i} change={c} />)}
+              </div>
+            )}
+            {result.recommendations.length > 0 && (
+              <div>
+                <p className="section-label mb-2 flex items-center gap-1.5"><Lightbulb className="h-3.5 w-3.5 text-amber-500" /> Recommendations</p>
+                <ul className="space-y-2">
+                  {result.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2.5 rounded-lg border border-amber-100 bg-amber-50/60 p-2.5 text-sm text-ink-700">
+                      <span className="mt-0.5 shrink-0 font-bold text-amber-600">{i + 1}.</span>{r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  );
+}
+
+function ProfileUpdateCard({ update }: { update: ProfileUpdate }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass glass-edge overflow-hidden">
+      <button className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-white/60 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100"><Brain className="h-4 w-4 text-violet-600" /></div>
+          <div>
+            <p className="text-sm font-semibold text-ink-800">Updated after {update.company}</p>
+            <p className="text-xs text-ink-400">{formatRelativeTime(update.timestamp)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={update.changes.length > 0 ? "danger" : "default"}>
-            {update.changes.length} changes
-          </Badge>
-          <ChevronDown className={cn("w-4 h-4 text-slate-500 transition-transform", expanded && "rotate-180")} />
+          <Badge variant={update.changes.length > 0 ? "danger" : "default"}>{update.changes.length} changes</Badge>
+          <ChevronDown className={cn("h-4 w-4 text-ink-400 transition-transform", expanded && "rotate-180")} />
         </div>
       </button>
-
       <AnimatePresence>
         {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-800/60 pt-3">
-              {update.changes.length > 0 && (
-                <div className="space-y-2">
-                  <p className="section-label">Skill Changes</p>
-                  {update.changes.map((c, i) => (
-                    <SkillChangeRow key={i} change={c} />
-                  ))}
-                </div>
-              )}
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="space-y-3 border-t border-slate-200 px-4 pb-4 pt-3">
+              {update.changes.map((c, i) => <SkillChangeRow key={i} change={c} />)}
               {update.recommendations.length > 0 && (
-                <div>
-                  <p className="section-label mb-2">Recommendations</p>
-                  <ul className="space-y-1.5">
-                    {update.recommendations.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                        <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                        {r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <ul className="space-y-1.5">
+                  {update.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-ink-600"><Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />{r}</li>
+                  ))}
+                </ul>
               )}
             </div>
           </motion.div>
@@ -127,328 +196,81 @@ function ProfileUpdateCard({ update }: { update: ProfileUpdate }) {
 }
 
 export function NotSelectedTab() {
-  const {
-    applications, profile, profileHistory, setProfileHistory,
-    setProfile, addToast, isLoading, setLoading,
-  } = useAppStore();
+  const { applications, profile, profileHistory, setProfileHistory, setActiveTab } = useAppStore();
 
-  const [selectedAppId, setSelectedAppId] = useState<string>("");
-  const [form, setForm] = useState({
-    interview_experience: "",
-    rejection_email: "",
-    topics_struggled: "",
-    missing_skills: "",
-    recruiter_feedback: "",
-  });
-  const [analysisResult, setAnalysisResult] = useState<{
-    skill_changes: SkillChange[];
-    recommendations: string[];
-    summary: string;
-  } | null>(null);
+  const refreshHistory = () => { api.getProfileHistory().then(setProfileHistory).catch(() => {}); };
+  useEffect(() => { refreshHistory(); }, []);
 
-  const rejectedApps = applications.filter(
-    (a) => a.status === "not_selected" || a.status === "submitted" || a.status === "interview"
-  );
-
-  const selectedApp = applications.find((a) => a.id === selectedAppId);
-
-  useEffect(() => {
-    // Load profile history from backend
-    api.getProfileHistory()
-      .then(setProfileHistory)
-      .catch(() => {});
-  }, []);
-
-  const handleAnalyze = async () => {
-    if (!selectedAppId) return;
-    setLoading("analyze", true);
-    setAnalysisResult(null);
-    try {
-      const result = await api.analyzeRejection({
-        application_id: selectedAppId,
-        ...form,
-      });
-      setAnalysisResult({
-        skill_changes: result.skill_changes,
-        recommendations: result.recommendations,
-        summary: result.summary,
-      });
-      // Update profile in store
-      if (profile) {
-        // Re-fetch updated profile via full data
-        const data = await api.getAllData();
-        if (data.current_profile_state) setProfile(data.current_profile_state);
-      }
-      setProfileHistory([result.profile_update, ...profileHistory]);
-      addToast({ type: "success", message: "Rejection analyzed & profile updated!" });
-
-      // Clear form
-      setForm({ interview_experience: "", rejection_email: "", topics_struggled: "", missing_skills: "", recruiter_feedback: "" });
-    } catch (e: any) {
-      addToast({ type: "error", message: e.message });
-    } finally {
-      setLoading("analyze", false);
-    }
-  };
-
-  const isAnalyzing = isLoading["analyze"];
-
-  const textAreaClasses = "input-field resize-none text-sm";
+  const rejected = applications.filter((a) => a.status === "not_selected");
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl font-bold gradient-text">Not Selected — Learn & Grow</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Turn every rejection into intelligence. AI analyzes your feedback and evolves your profile.
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 py-6 sm:p-6">
+      <div className="space-y-2">
+        <Badge variant="danger" className="text-[10px]"><Brain className="h-2.5 w-2.5" /> Learning Engine</Badge>
+        <h1 className="font-display text-3xl font-bold tracking-tightest text-ink-900 sm:text-4xl">
+          Learn from <span className="gradient-text-brand">Rejections</span>
+        </h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-ink-500">
+          Each rejected application appears here. Write notes freely and click Analyze — the AI recalibrates your living profile and suggests what to improve.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left: Rejection form */}
-        <div className="lg:col-span-3 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <XCircle className="w-5 h-5 text-red-400" />
-                Log Rejection Feedback
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Application selector */}
-              <div>
-                <label className="section-label block mb-1.5">Select Application</label>
-                <select
-                  className="input-field"
-                  value={selectedAppId}
-                  onChange={(e) => setSelectedAppId(e.target.value)}
-                >
-                  <option value="">Choose an application...</option>
-                  {rejectedApps.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.company} — {a.role} ({a.status.replace("_", " ")})
-                    </option>
-                  ))}
-                </select>
-                {rejectedApps.length === 0 && (
-                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    No applications found. Submit one in the Apply tab first.
-                  </p>
-                )}
-              </div>
-
-              {selectedApp && (
-                <div className="flex items-center gap-3 p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
-                  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-300">
-                    {selectedApp.company?.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">{selectedApp.company}</p>
-                    <p className="text-xs text-slate-500">{selectedApp.role} · {selectedApp.match_percentage.toFixed(0)}% match</p>
-                  </div>
-                  <div className="ml-auto flex flex-wrap gap-1">
-                    {selectedApp.missing_skills.slice(0, 3).map((s) => (
-                      <Badge key={s} variant="danger" className="text-[10px]">{s}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Feedback fields */}
-              <div>
-                <label className="section-label block mb-1.5">Interview Experience</label>
-                <textarea
-                  className={textAreaClasses}
-                  rows={3}
-                  placeholder="Describe the interview process, rounds, topics asked..."
-                  value={form.interview_experience}
-                  onChange={(e) => setForm({ ...form, interview_experience: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="section-label block mb-1.5">Rejection Email / Feedback</label>
-                <textarea
-                  className={textAreaClasses}
-                  rows={3}
-                  placeholder="Paste the rejection email or summarize what they said..."
-                  value={form.rejection_email}
-                  onChange={(e) => setForm({ ...form, rejection_email: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="section-label block mb-1.5">Topics You Struggled With</label>
-                  <textarea
-                    className={textAreaClasses}
-                    rows={3}
-                    placeholder="System design, coding, behavioral..."
-                    value={form.topics_struggled}
-                    onChange={(e) => setForm({ ...form, topics_struggled: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="section-label block mb-1.5">Missing Skills You Noticed</label>
-                  <textarea
-                    className={textAreaClasses}
-                    rows={3}
-                    placeholder="Docker, Kubernetes, React..."
-                    value={form.missing_skills}
-                    onChange={(e) => setForm({ ...form, missing_skills: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="section-label block mb-1.5">Recruiter Feedback</label>
-                <textarea
-                  className={textAreaClasses}
-                  rows={2}
-                  placeholder="Any direct feedback from the recruiter or hiring manager..."
-                  value={form.recruiter_feedback}
-                  onChange={(e) => setForm({ ...form, recruiter_feedback: e.target.value })}
-                />
-              </div>
-
-              <Button
-                onClick={handleAnalyze}
-                disabled={!selectedAppId || !profile}
-                loading={isAnalyzing}
-                className="w-full"
-              >
-                <Brain className="w-4 h-4" />
-                {isAnalyzing ? "AI is analyzing..." : "Analyze & Update Profile"}
-              </Button>
-
-              {!profile && (
-                <p className="text-xs text-amber-400 text-center flex items-center justify-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  Upload a resume in the Apply tab first.
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        {/* Left: per-row rejections */}
+        <div className="space-y-4 lg:col-span-3">
+          {rejected.length === 0 ? (
+            <Card>
+              <div className="flex flex-col items-center py-12 text-center">
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100"><XCircle className="h-7 w-7 text-ink-400" /></div>
+                <h3 className="font-display text-base font-semibold text-ink-800">No rejections to analyze</h3>
+                <p className="mt-1 max-w-xs text-sm text-ink-500">
+                  Mark an application as <span className="font-medium text-rose-600">Not Selected</span> in the{" "}
+                  <button onClick={() => setActiveTab("tracking")} className="font-medium text-brand-600 hover:underline">Tracking</button> tab to start learning.
                 </p>
+              </div>
+            </Card>
+          ) : (
+            <>
+              {!profile && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" /> Upload your profile in the Apply tab so analysis can update it.
+                </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* AI Analysis Result */}
-          <AnimatePresence>
-            {isAnalyzing && (
-              <Card>
-                <CardContent>
-                  <AIThinkingAnimation label="Learning from your rejection feedback..." />
-                </CardContent>
-              </Card>
-            )}
-
-            {analysisResult && !isAnalyzing && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <Card className="border-indigo-500/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-indigo-400" />
-                      AI Analysis Results
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="p-3 bg-indigo-500/8 border border-indigo-500/20 rounded-xl">
-                      <p className="text-sm text-slate-300">{analysisResult.summary}</p>
-                    </div>
-
-                    {analysisResult.skill_changes.length > 0 && (
-                      <div>
-                        <p className="section-label mb-2">Profile Changes</p>
-                        <div className="space-y-2">
-                          {analysisResult.skill_changes.map((c, i) => (
-                            <SkillChangeRow key={i} change={c} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {analysisResult.recommendations.length > 0 && (
-                      <div>
-                        <p className="section-label mb-2 flex items-center gap-1.5">
-                          <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
-                          Action Recommendations
-                        </p>
-                        <ul className="space-y-2">
-                          {analysisResult.recommendations.map((r, i) => (
-                            <motion.li
-                              key={i}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i * 0.08 }}
-                              className="flex items-start gap-2 text-sm text-slate-300 p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-lg"
-                            >
-                              <span className="text-amber-400 font-bold shrink-0 mt-0.5">{i + 1}.</span>
-                              {r}
-                            </motion.li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {rejected.map((app) => <RejectionRow key={app.id} app={app} onAnalyzed={refreshHistory} />)}
+            </>
+          )}
         </div>
 
-        {/* Right: Profile evolution timeline */}
-        <div className="lg:col-span-2 space-y-4">
+        {/* Right: evolution + live skills */}
+        <div className="space-y-4 lg:col-span-2">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Clock className="w-4 h-4 text-indigo-400" />
-                Profile Evolution
-              </CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock className="h-4 w-4 text-brand-600" /> Profile Evolution</CardTitle></CardHeader>
             <CardContent>
               {profileHistory.length === 0 ? (
-                <div className="text-center py-8">
-                  <Brain className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">
-                    No profile updates yet.<br />
-                    Analyze a rejection to start evolving.
-                  </p>
+                <div className="py-8 text-center">
+                  <Brain className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                  <p className="text-sm text-ink-500">No updates yet.<br />Analyze a rejection to start evolving.</p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                  {profileHistory.map((upd) => (
-                    <ProfileUpdateCard key={upd.id} update={upd} />
-                  ))}
+                <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+                  {profileHistory.map((u) => <ProfileUpdateCard key={u.id} update={u} />)}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Current profile skills (live) */}
           {profile && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Current Skill Confidence</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-base">Current Skill Confidence</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {[...profile.skills]
-                    .sort((a, b) => b.confidence - a.confidence)
-                    .slice(0, 12)
-                    .map((s) => (
-                      <div key={s.name} className="flex items-center gap-3">
-                        <span className="text-xs text-slate-400 w-28 truncate shrink-0">{s.name}</span>
-                        <Progress
-                          value={s.confidence}
-                          colorByValue
-                          size="sm"
-                          className="flex-1"
-                        />
-                        <span className="text-xs font-bold text-slate-400 w-8 text-right shrink-0">
-                          {s.confidence.toFixed(0)}%
-                        </span>
-                      </div>
-                    ))}
+                <div className="max-h-64 space-y-2.5 overflow-y-auto pr-1">
+                  {[...profile.skills].sort((a, b) => b.confidence - a.confidence).slice(0, 12).map((s) => (
+                    <div key={s.name} className="flex items-center gap-3">
+                      <span className="w-28 shrink-0 truncate text-xs text-ink-600">{s.name}</span>
+                      <Progress value={s.confidence} colorByValue size="sm" className="flex-1" />
+                      <span className="w-9 shrink-0 text-right text-xs font-bold text-ink-500 tabular-nums">{s.confidence.toFixed(0)}%</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
