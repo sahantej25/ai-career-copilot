@@ -69,7 +69,9 @@ def test_validate_apply_url_accepts_https():
 
 def test_filter_job_sources_whitelist():
     assert filter_job_sources(["linkedin", "evil"]) == ["linkedin"]
-    assert set(filter_job_sources(None)) == {"linkedin", "greenhouse", "hiringcafe"}
+    assert set(filter_job_sources(None)) == {
+        "linkedin", "greenhouse", "hiringcafe", "shine", "naukri", "indeed_india",
+    }
 
 
 def test_match_request_requires_job_description():

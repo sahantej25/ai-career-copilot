@@ -2,30 +2,7 @@
 import re
 
 from models.schemas import JobListing
-
-US_FILTER_ALIASES = frozenset(
-    {"united states", "usa", "us", "u.s.", "u.s", "america", "united states of america"}
-)
-
-US_MARKERS = (
-    "united states",
-    "united states of america",
-    "usa",
-    "u.s.a",
-    "u.s.",
-    " us,",
-    " us)",
-    " us ",
-    " us-",
-    "remote - us",
-    "remote (us)",
-    "remote, us",
-    "remote us",
-    "us remote",
-    "us-based",
-    "us based",
-    "north america",
-)
+from services.location_registry import US, match_location_profile
 
 US_STATE_NAMES = (
     "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
@@ -45,19 +22,10 @@ US_STATE_ABBREVS = frozenset(
     "MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI DC".split()
 )
 
-NON_US_MARKERS = (
-    "emea", "apac", "latam", "mena", "europe", "european union", " eu ",
-    "united kingdom", " uk", "england", "scotland", "wales", "ireland",
-    "germany", "france", "netherlands", "amsterdam", "spain", "italy",
-    "poland", "sweden", "norway", "denmark", "finland", "belgium",
-    "switzerland", "austria", "portugal", "czech", "romania", "hungary",
-    "canada", "toronto", "vancouver", "montreal", "mexico", "brazil",
-    "argentina", "australia", "sydney", "melbourne", "new zealand",
-    "singapore", "india", "bangalore", "mumbai", "japan", "tokyo",
-    "china", "beijing", "shanghai", "korea", "seoul", "israel", "tel aviv",
-    "dubai", "uae", "south africa", "nigeria", "philippines", "vietnam",
-    "thailand", "indonesia", "malaysia", "taiwan", "hong kong",
-    "london", "paris", "berlin", "munich", "dublin", "zurich", "geneva",
+US_MARKERS = (
+    "united states", "united states of america", "usa", "u.s.a", "u.s.",
+    " us,", " us)", " us ", " us-", "remote - us", "remote (us)", "remote, us",
+    "remote us", "us remote", "us-based", "us based", "north america",
 )
 
 _STATE_ABBREV_RE = re.compile(
@@ -82,8 +50,16 @@ def _has_us_marker(text: str) -> bool:
     return False
 
 
-def _has_non_us_marker(text: str) -> bool:
-    return any(marker in text for marker in NON_US_MARKERS)
+def _has_markers(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
+
+
+def _has_alias(text: str, aliases: frozenset[str]) -> bool:
+    return any(re.search(rf"\b{re.escape(alias)}\b", text) for alias in aliases)
+
+
+def _job_text_blob(job: JobListing) -> str:
+    return _normalize(f"{job.location} {job.title} {job.excerpt} {job.description}")
 
 
 def job_matches_location(job: JobListing, filter_location: str) -> bool:
@@ -92,20 +68,41 @@ def job_matches_location(job: JobListing, filter_location: str) -> bool:
     if not fl:
         return True
 
-    loc = _normalize(job.location)
-    title = _normalize(job.title)
-    excerpt = _normalize(job.excerpt)
-    combined = f"{loc} {title} {excerpt}"
+    profile = match_location_profile(filter_location)
+    combined = _job_text_blob(job)
 
-    if fl in US_FILTER_ALIASES:
-        if _has_non_us_marker(combined) and not _has_us_marker(combined):
+    if profile.key == "us" or fl in US.aliases:
+        if _has_markers(combined, US.foreign_markers) and not _has_us_marker(combined):
             return False
         if _has_us_marker(combined):
             return True
-        # Ambiguous remote/global listings without a US anchor are excluded.
-        if job.remote and loc in {"", "remote", "see posting", "multiple locations"}:
+        if job.remote and _normalize(job.location) in {"", "remote", "see posting", "multiple locations"}:
             return False
         return False
 
-    # Generic substring match for city/country-specific filters.
-    return fl in loc or fl in title or fl in excerpt
+    if profile.key == "india":
+        if _has_markers(combined, profile.foreign_markers) and not (
+            _has_markers(combined, profile.city_markers)
+            or "india" in combined
+            or _has_alias(combined, profile.aliases)
+        ):
+            return False
+        if (
+            _has_markers(combined, profile.city_markers)
+            or "india" in combined
+            or _has_alias(combined, profile.aliases)
+        ):
+            return True
+        # India-targeted fetch adapters may return broader listings — keep if source is regional.
+        if job.source in {"shine", "naukri", "indeed_india"}:
+            return True
+        return False
+
+    if profile.city_markers:
+        if any(city in combined for city in profile.city_markers):
+            return True
+        if fl in combined:
+            return True
+        return False
+
+    return fl in combined or fl in _normalize(job.location)
