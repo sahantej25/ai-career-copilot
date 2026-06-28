@@ -15,7 +15,7 @@ except ImportError:
     DocxDocument = None
 
 from services.openai_service import chat_json
-from models.schemas import CandidateProfile, Skill, Project, Experience, Education
+from models.schemas import CandidateProfile, Skill, Project, Experience, Education, ResumeStyle
 
 
 _SYSTEM = """You are a resume parser. Extract structured information from the given resume text.
@@ -115,4 +115,45 @@ async def parse_resume(file_bytes: bytes, filename: str) -> CandidateProfile:
         experience=experience,
         education=education,
         domains=data.get("domains", []),
+    )
+
+
+_STYLE_SYSTEM = """You analyze a reference resume purely for its STYLE and STRUCTURE.
+Do NOT copy any content. Identify how it is organized and presented.
+Return ONLY valid JSON:
+{
+  "section_order": ["summary","skills","experience","projects","education"],
+  "tone": "short phrase, e.g. 'concise & impact-driven' or 'detailed & academic'",
+  "accent_hex": "a hex color that fits the resume's vibe, e.g. #10b981",
+  "notes": "1-2 sentences on layout/formatting characteristics to emulate"
+}
+section_order must only use values from: summary, skills, experience, projects, education.
+"""
+
+_ALLOWED_SECTIONS = {"summary", "skills", "experience", "projects", "education"}
+
+
+async def extract_resume_style(file_bytes: bytes, filename: str) -> ResumeStyle:
+    """Parse an optional reference resume and infer stylistic guidance only."""
+    raw_text = extract_text(file_bytes, filename)
+    if not raw_text.strip():
+        raise ValueError("Could not extract text from the reference resume.")
+
+    data = await chat_json(_STYLE_SYSTEM, f"Reference resume text:\n\n{raw_text[:6000]}")
+
+    order = [s for s in data.get("section_order", []) if s in _ALLOWED_SECTIONS]
+    # Ensure all sections are represented (append any missing in a sensible default order)
+    for s in ["summary", "skills", "experience", "projects", "education"]:
+        if s not in order:
+            order.append(s)
+
+    accent = str(data.get("accent_hex", "#10b981")).strip()
+    if not (accent.startswith("#") and len(accent) in (4, 7)):
+        accent = "#10b981"
+
+    return ResumeStyle(
+        section_order=order,
+        tone=str(data.get("tone", "")).strip(),
+        accent_hex=accent,
+        notes=str(data.get("notes", "")).strip(),
     )

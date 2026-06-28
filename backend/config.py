@@ -9,7 +9,15 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     data_file_path: str = str(BASE_DIR / "data" / "data.json")
     max_file_size_mb: int = 10
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5199"]
+    jwt_secret: str = "change-me-in-production-use-env-var"
+    jwt_expire_hours: int = 168
+    users_dir: str = str(BASE_DIR / "data" / "users")
+    linkedin_default_location: str = "United States"
+    greenhouse_boards: list[str] = [
+        "stripe", "figma", "discord", "notion", "airbnb", "datadog",
+        "cloudflare", "openai", "databricks", "scaleai", "brex", "ramp",
+    ]
 
     class Config:
         env_file = ".env"
