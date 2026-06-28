@@ -1,8 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import Response
 
-from config import settings
 from deps.auth import bind_user_context
+from deps.guardrails import ai_guard
 from models.schemas import (
     MatchRequest, MatchResponse, GenerateResumeRequest, ResumePreviewResponse,
     SubmitApplicationRequest, Application, AppData,
@@ -10,19 +10,14 @@ from models.schemas import (
 from agents.profile_agent import parse_resume, extract_resume_style
 from agents.job_matching_agent import match_job
 from agents.resume_agent import generate_tailored_resume, build_resume_package
+from services.guardrails.files import validate_upload_file
 from services import storage_service as store
+from services.openai_service import AIConfigurationError
 
 router = APIRouter(prefix="/api/apply", tags=["apply"], dependencies=[Depends(bind_user_context)])
 
 _ALLOWED_EXT = {"pdf", "docx", "doc", "txt"}
-
-
-def _check_file(file: UploadFile, content: bytes, allowed: set[str]) -> None:
-    if len(content) > settings.max_file_size_mb * 1024 * 1024:
-        raise HTTPException(413, f"File exceeds {settings.max_file_size_mb}MB limit.")
-    ext = (file.filename or "").lower().rsplit(".", 1)[-1]
-    if ext not in allowed:
-        raise HTTPException(415, f"Unsupported file type '.{ext}'. Allowed: {', '.join(sorted(allowed))}.")
+_REFERENCE_EXT = {"pdf", "docx", "doc"}
 
 
 async def _require_profile() -> AppData:
@@ -32,14 +27,18 @@ async def _require_profile() -> AppData:
     return data
 
 
-@router.post("/upload-profile")
+@router.post("/upload-profile", dependencies=[Depends(ai_guard)])
 async def upload_profile(file: UploadFile = File(...)):
     """Parse uploaded candidate profile → store as current_profile_state."""
     content = await file.read()
-    _check_file(file, content, _ALLOWED_EXT)
+    validate_upload_file(file, content, _ALLOWED_EXT)
 
     try:
         profile = await parse_resume(content, file.filename or "resume.pdf")
+    except AIConfigurationError:
+        raise HTTPException(503, "AI profile parsing requires OPENAI_API_KEY to be configured.")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(422, f"Failed to parse profile: {e}")
 
@@ -49,14 +48,18 @@ async def upload_profile(file: UploadFile = File(...)):
     return {"message": "Profile parsed successfully", "profile": profile}
 
 
-@router.post("/upload-reference")
+@router.post("/upload-reference", dependencies=[Depends(ai_guard)])
 async def upload_reference(file: UploadFile = File(...)):
     """Optional reference resume → extract STYLE only (never content)."""
     content = await file.read()
-    _check_file(file, content, {"pdf", "docx", "doc"})
+    validate_upload_file(file, content, _REFERENCE_EXT)
 
     try:
         style = await extract_resume_style(content, file.filename or "reference.pdf")
+    except AIConfigurationError:
+        raise HTTPException(503, "AI style extraction requires OPENAI_API_KEY to be configured.")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     except Exception as e:
         raise HTTPException(422, f"Failed to read reference resume: {e}")
 
@@ -78,39 +81,44 @@ async def remove_reference():
     return {"message": "Reference resume removed; default template will be used."}
 
 
-@router.post("/match", response_model=MatchResponse)
+@router.post("/match", response_model=MatchResponse, dependencies=[Depends(ai_guard)])
 async def match_against_profile(req: MatchRequest, data: AppData = Depends(_require_profile)):
     try:
         result = await match_job(
             data.current_profile_state, req.job_description,
             company_hint=req.company, role_hint=req.role,
         )
+    except AIConfigurationError:
+        raise HTTPException(503, "AI matching requires OPENAI_API_KEY to be configured.")
     except Exception as e:
         raise HTTPException(500, f"Matching failed: {e}")
     return result
 
 
-@router.post("/resume-preview", response_model=ResumePreviewResponse)
+@router.post("/resume-preview", response_model=ResumePreviewResponse, dependencies=[Depends(ai_guard)])
 async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
-    """Preview what the tailored resume will emphasize (no PDF)."""
     try:
         return await build_resume_package(
             data.current_profile_state, req.job_description, data.resume_style
         )
+    except AIConfigurationError:
+        raise HTTPException(503, "AI resume preview requires OPENAI_API_KEY to be configured.")
     except Exception as e:
         raise HTTPException(500, f"Preview failed: {e}")
 
 
-@router.post("/generate-resume")
+@router.post("/generate-resume", dependencies=[Depends(ai_guard)])
 async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
     try:
         pdf_bytes = await generate_tailored_resume(
             data.current_profile_state, req.job_description, data.resume_style
         )
+    except AIConfigurationError:
+        raise HTTPException(503, "AI resume generation requires OPENAI_API_KEY to be configured.")
     except Exception as e:
         raise HTTPException(500, f"Resume generation failed: {e}")
 
-    safe = (req.company or "tailored").replace(" ", "_")
+    safe = (req.company or "tailored").replace(" ", "_")[:80]
     filename = f"resume_{safe}.pdf"
     return Response(
         content=pdf_bytes,

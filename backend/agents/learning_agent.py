@@ -5,7 +5,14 @@ from datetime import datetime
 
 from models.schemas import (
     CandidateProfile, RejectionNote, Application,
-    ProfileUpdate, SkillChange, GlobalAnalysis, RadarDataPoint, AppData,
+    ProfileUpdate, SkillChange, GlobalAnalysis, RadarDataPoint, AppData, Skill,
+)
+from services.guardrails import (
+    clamp_confidence_delta,
+    clamp_percentage,
+    sanitize_ai_string_list,
+    sanitize_ai_text,
+    wrap_untrusted_content,
 )
 from services.openai_service import chat_json
 
@@ -25,7 +32,9 @@ Return ONLY valid JSON:
 }
 confidence_delta is negative for weaknesses revealed, positive if candidate demonstrated strength.
 Keep changes realistic: -5 to -30 for weaknesses, +5 to +15 for strengths.
+Base skill changes ONLY on evidence in the rejection feedback — do not speculate wildly.
 """
+
 
 _GLOBAL_SYSTEM = """You are a career strategist analyzing patterns across multiple job rejections.
 Given a list of rejections with their skill gaps and recommendations, identify macro patterns.
@@ -61,7 +70,6 @@ async def analyze_rejection(
         {"name": s.name, "confidence": s.confidence, "category": s.category}
         for s in profile.skills
     ]
-    # The free-text notes are the primary signal; structured fields are supplementary.
     structured = "\n".join(
         f"{label}: {val}"
         for label, val in [
@@ -83,44 +91,44 @@ async def analyze_rejection(
         f"Additional structured details:\n{structured or '(none)'}"
     )
 
-    data = await chat_json(_REJECTION_SYSTEM, ctx)
+    notes_block = wrap_untrusted_content("rejection_feedback", ctx)
+    data = await chat_json(_REJECTION_SYSTEM, notes_block, agent="rejection_analysis")
 
     skill_changes: list[SkillChange] = []
     skill_map = {s.name.lower(): s for s in profile.skills}
 
-    for change in data.get("skill_changes", []):
-        sname = change.get("skill", "")
-        delta = float(change.get("confidence_delta", 0))
+    for change in data.get("skill_changes", [])[:20]:
+        sname = sanitize_ai_text(change.get("skill", ""), max_len=80)
+        delta = clamp_confidence_delta(change.get("confidence_delta", 0))
         key = sname.lower()
         if key in skill_map:
             skill = skill_map[key]
             prev = skill.confidence
-            skill.confidence = max(0, min(100, prev + delta))
+            skill.confidence = clamp_percentage(prev + delta)
             skill_changes.append(SkillChange(
                 skill=sname,
                 previous_confidence=prev,
                 new_confidence=skill.confidence,
-                reason=change.get("reason", ""),
+                reason=sanitize_ai_text(change.get("reason", ""), max_len=300),
             ))
 
-    # Add newly discovered skills
-    for ns in data.get("new_skills_to_add", []):
-        from models.schemas import Skill
-        if ns.get("name", "").lower() not in skill_map:
+    for ns in data.get("new_skills_to_add", [])[:10]:
+        name = sanitize_ai_text(ns.get("name", ""), max_len=80)
+        if name and name.lower() not in skill_map:
             profile.skills.append(Skill(
-                name=ns["name"],
-                confidence=float(ns.get("confidence", 30)),
-                category=ns.get("category", "general"),
+                name=name,
+                confidence=clamp_percentage(ns.get("confidence", 30), default=30),
+                category=sanitize_ai_text(ns.get("category", "general"), max_len=40) or "general",
             ))
 
     update = ProfileUpdate(
         triggered_by=application.id,
         company=application.company,
         changes=skill_changes,
-        recommendations=data.get("recommendations", []),
+        recommendations=sanitize_ai_string_list(data.get("recommendations")),
     )
 
-    summary = data.get("summary", "") or (
+    summary = sanitize_ai_text(data.get("summary", ""), max_len=600) or (
         f"Profile updated based on the rejection from {application.company}."
     )
 
@@ -162,22 +170,25 @@ async def build_global_analysis(data: AppData) -> GlobalAnalysis:
         ]
         ctx += f"\n\nCurrent skill profile: {profile_skills}"
 
-    result = await chat_json(_GLOBAL_SYSTEM, ctx, temperature=0.3)
+    aggregate_block = wrap_untrusted_content("rejection_history", ctx)
+    result = await chat_json(_GLOBAL_SYSTEM, aggregate_block, temperature=0.3, agent="global_analysis")
 
     radar = [
         RadarDataPoint(
-            subject=r.get("subject", ""),
-            value=float(r.get("value", 50)),
-            full_mark=float(r.get("full_mark", 100)),
+            subject=sanitize_ai_text(r.get("subject", ""), max_len=60),
+            value=clamp_percentage(r.get("value", 50), default=50),
+            full_mark=clamp_percentage(r.get("full_mark", 100), default=100),
         )
-        for r in result.get("skill_radar_data", [])
+        for r in result.get("skill_radar_data", [])[:12]
+        if r.get("subject")
     ]
 
     return GlobalAnalysis(
-        summary=result.get("summary", ""),
-        recurring_missing_skills=result.get("recurring_missing_skills", []),
-        common_interview_topics=result.get("common_interview_topics", []),
-        frequent_weaknesses=result.get("frequent_weaknesses", []),
-        career_recommendations=result.get("career_recommendations", []),
+        summary=sanitize_ai_text(result.get("summary", ""), max_len=1200),
+        recurring_missing_skills=sanitize_ai_string_list(result.get("recurring_missing_skills")),
+        common_interview_topics=sanitize_ai_string_list(result.get("common_interview_topics")),
+        frequent_weaknesses=sanitize_ai_string_list(result.get("frequent_weaknesses")),
+        career_recommendations=sanitize_ai_string_list(result.get("career_recommendations")),
         skill_radar_data=radar,
+        last_updated=datetime.utcnow().isoformat() + "Z",
     )
