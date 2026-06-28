@@ -296,6 +296,8 @@ class UserPublic(BaseModel):
     id: str
     email: str
     name: str
+    auth_provider: str = "local"  # local | google | linked
+    picture: str = ""
 
 
 class RegisterRequest(BaseModel):
@@ -307,6 +309,10 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class GoogleAuthRequest(BaseModel):
+    credential: str
 
 
 class AuthResponse(BaseModel):

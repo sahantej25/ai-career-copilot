@@ -49,6 +49,11 @@ export async function register(email: string, password: string, name: string): P
   return data as AuthResponse;
 }
 
+export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
+  const { data } = await http.post("/api/auth/google", { credential });
+  return data as AuthResponse;
+}
+
 export async function getSession() {
   const { data } = await http.get("/api/auth/session");
   return data as {
