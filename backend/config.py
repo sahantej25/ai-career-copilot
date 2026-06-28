@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         "stripe", "figma", "discord", "notion", "airbnb", "datadog",
         "cloudflare", "openai", "databricks", "scaleai", "brex", "ramp",
     ]
+    google_client_id: str = ""
 
     class Config:
         env_file = ".env"
