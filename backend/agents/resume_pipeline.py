@@ -8,6 +8,7 @@ from typing import Optional
 
 from models.schemas import (
     CandidateProfile,
+    Experience,
     MatchContextInput,
     MatchStep,
     ResumePreviewResponse,
@@ -42,21 +43,30 @@ Return ONLY valid JSON:
 }"""
 
 _STEP2_SYSTEM = """You are a professional resume writer specializing in ATS-optimized, role-specific resumes.
-STEP 2 — Write the tailored resume package for this exact job.
+STEP 2 — Tailor the candidate's EXISTING resume for this exact job while preserving its structure.
 
-Rules:
-- Rewrite experience bullets to highlight JD-relevant impact (metrics, action verbs, keywords).
+CRITICAL STRUCTURE RULES:
+- Keep the SAME employers, roles, durations, projects, and education as the original profile.
+- Do NOT remove roles or collapse sections into a shorter generic version.
+- For each experience entry, output ONE rewritten bullet for EVERY original bullet (same count).
+  If the original role has 6 bullets, you MUST return 6 tailored bullets — never fewer.
+- Reorder experience entries so the most JD-relevant roles appear first, but include ALL roles.
+- Rewrite bullets in place: keep concrete facts, tools, systems, scope, and metrics from the source.
+  Refine wording for impact and weave JD keywords naturally — do NOT replace specifics with generic filler.
+- Avoid vague phrases like "worked on various tasks", "helped the team", or "responsible for" unless the source used them.
+
+Content rules:
 - Do NOT invent employers, degrees, tools, or achievements not supported by the candidate profile.
 - Never mention confidence scores, system notes, or internal metadata.
-- Summary must sound natural and senior — not keyword-stuffed.
+- Summary: 3-4 sentences, senior and specific to THIS role — not keyword-stuffed.
 - ordered_skills: ALL candidate skills, most JD-relevant first.
 
 Return ONLY valid JSON:
 {
-  "tailored_summary": "2-3 sentence professional summary for THIS role",
+  "tailored_summary": "3-4 sentence professional summary for THIS role",
   "ordered_skills": ["skill1", "skill2"],
   "highlighted_projects": ["Project A"],
-  "key_achievements": ["2-4 impact bullets for summary or experience"],
+  "key_achievements": ["3-5 high-impact bullets drawn from rewritten experience"],
   "tailored_experience": [
     {
       "company": "exact company from profile",
@@ -70,9 +80,7 @@ Return ONLY valid JSON:
     {"step": 3, "title": "Rewrite experience bullets", "summary": "1 sentence"},
     {"step": 4, "title": "Finalize tailored package", "summary": "1 sentence"}
   ]
-}
-Include ALL profile experience entries in tailored_experience, reordered with most relevant first.
-Each entry should have 2-4 rewritten bullets when original bullets exist."""
+}"""
 
 
 def _parse_steps(raw: object) -> list[MatchStep]:
@@ -92,14 +100,91 @@ def _parse_steps(raw: object) -> list[MatchStep]:
     return out
 
 
+def _experience_key(company: str, role: str) -> tuple[str, str]:
+    return company.strip().lower(), role.strip().lower()
+
+
+def _find_profile_experience(profile: CandidateProfile, company: str, role: str) -> Experience | None:
+    key = _experience_key(company, role)
+    for exp in profile.experience:
+        if _experience_key(exp.company, exp.role) == key:
+            return exp
+    return None
+
+
+def _ensure_bullet_count(
+    tailored: list[str],
+    original: list[str],
+    *,
+    max_bullets: int = 10,
+) -> list[str]:
+    """Keep AI rewrites first; pad with originals if the model dropped bullets."""
+    cleaned = [sanitize_ai_text(b, max_len=400) for b in tailored if b and str(b).strip()]
+    if not original:
+        return cleaned[:max_bullets]
+    target = min(len(original), max_bullets)
+    if len(cleaned) >= target:
+        return cleaned[:max_bullets]
+    seen = {b.lower() for b in cleaned}
+    for bullet in original:
+        if len(cleaned) >= target:
+            break
+        text = sanitize_ai_text(bullet, max_len=400)
+        if text and text.lower() not in seen:
+            cleaned.append(text)
+            seen.add(text.lower())
+    return cleaned[:max_bullets]
+
+
+def _merge_tailored_with_profile(
+    tailored: list[TailoredExperienceEntry],
+    profile: CandidateProfile,
+) -> list[TailoredExperienceEntry]:
+    """Ensure every original role appears with full bullet depth."""
+    merged: list[TailoredExperienceEntry] = []
+    seen: set[tuple[str, str]] = set()
+
+    for entry in tailored:
+        key = _experience_key(entry.company, entry.role)
+        seen.add(key)
+        original = _find_profile_experience(profile, entry.company, entry.role)
+        bullets = _ensure_bullet_count(
+            entry.bullets,
+            original.description if original else [],
+        )
+        merged.append(
+            TailoredExperienceEntry(
+                company=entry.company or (original.company if original else ""),
+                role=entry.role or (original.role if original else ""),
+                duration=entry.duration or (original.duration if original else ""),
+                bullets=bullets,
+            )
+        )
+
+    for exp in profile.experience:
+        key = _experience_key(exp.company, exp.role)
+        if key in seen:
+            continue
+        merged.append(
+            TailoredExperienceEntry(
+                company=exp.company,
+                role=exp.role,
+                duration=exp.duration,
+                bullets=_ensure_bullet_count(exp.description, exp.description),
+            )
+        )
+
+    return merged
+
+
 def _parse_tailored_experience(raw: object, profile: CandidateProfile) -> list[TailoredExperienceEntry]:
     if not isinstance(raw, list):
         return _fallback_experience(profile)
     entries: list[TailoredExperienceEntry] = []
-    for item in raw[:8]:
+    for item in raw[:12]:
         if not isinstance(item, dict):
             continue
-        bullets = sanitize_ai_string_list(item.get("bullets"), max_items=6)
+        bullets = sanitize_ai_string_list(item.get("bullets"), max_items=10)
         if not bullets:
             continue
         entries.append(
@@ -110,7 +195,9 @@ def _parse_tailored_experience(raw: object, profile: CandidateProfile) -> list[T
                 bullets=bullets,
             )
         )
-    return entries or _fallback_experience(profile)
+    if not entries:
+        return _fallback_experience(profile)
+    return _merge_tailored_with_profile(entries, profile)
 
 
 def _fallback_experience(profile: CandidateProfile) -> list[TailoredExperienceEntry]:
@@ -119,11 +206,23 @@ def _fallback_experience(profile: CandidateProfile) -> list[TailoredExperienceEn
             company=exp.company,
             role=exp.role,
             duration=exp.duration,
-            bullets=[sanitize_ai_text(b, max_len=400) for b in exp.description[:4] if b],
+            bullets=_ensure_bullet_count(exp.description, exp.description),
         )
-        for exp in profile.experience[:6]
+        for exp in profile.experience[:12]
         if exp.description
     ]
+
+
+def _build_original_experience_block(profile: CandidateProfile) -> str:
+    if not profile.experience:
+        return "No experience entries."
+    lines = ["ORIGINAL EXPERIENCE (preserve structure and bullet count):"]
+    for exp in profile.experience:
+        lines.append(f"  • {exp.role} at {exp.company} ({exp.duration}) — {len(exp.description)} bullets")
+        for i, bullet in enumerate(exp.description[:10], 1):
+            if bullet.strip():
+                lines.append(f"      {i}. {bullet.strip()}")
+    return "\n".join(lines)
 
 
 def _match_context_block(match: Optional[MatchContextInput]) -> str:
@@ -172,15 +271,17 @@ async def run_resume_pipeline(
     )
 
     # ── Step 2: Final tailored package ──────────────────────────────────────
+    original_exp_block = _build_original_experience_block(profile)
     package = await chat_json(
         _STEP2_SYSTEM,
         (
             f"TAILORING PLAN:\n{plan}\n\n"
             f"MATCH ANALYSIS:\n{match_block}\n\n"
+            f"{original_exp_block}\n\n"
             f"{jd_block}\n\n"
             f"CANDIDATE PROFILE:\n{profile_ctx}{style_ctx}"
         ),
-        temperature=0.4,
+        temperature=0.35,
         agent="resume_step2_package",
     )
 

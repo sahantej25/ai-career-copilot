@@ -96,7 +96,7 @@ def generate_resume_pdf(
                     company=exp.company,
                     role=exp.role,
                     duration=exp.duration,
-                    bullets=exp.description[:4],
+                    bullets=exp.description[:10],
                 )
                 for exp in profile.experience
             ]
@@ -105,7 +105,7 @@ def generate_resume_pdf(
             for exp in exp_entries:
                 story.append(Paragraph(exp.role, s["job_title"]))
                 story.append(Paragraph(f"{exp.company}  —  {exp.duration}", s["company"]))
-                for bullet in exp.bullets[:5]:
+                for bullet in exp.bullets[:10]:
                     story.append(Paragraph(f"• {bullet}", s["bullet"]))
                 story.append(Spacer(1, 4))
 
