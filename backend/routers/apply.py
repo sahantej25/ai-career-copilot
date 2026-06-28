@@ -5,7 +5,7 @@ from deps.auth import bind_user_context
 from deps.guardrails import ai_guard
 from models.schemas import (
     MatchRequest, MatchResponse, GenerateResumeRequest, ResumePreviewResponse,
-    SubmitApplicationRequest, Application, AppData,
+    SubmitApplicationRequest, Application, AppData, CandidateProfile, SaveProfileRequest,
 )
 from agents.profile_agent import parse_resume, extract_resume_style
 from agents.job_matching_agent import match_job
@@ -23,8 +23,34 @@ _REFERENCE_EXT = {"pdf", "docx", "doc"}
 async def _require_profile() -> AppData:
     data = await store.load_data()
     if not data.current_profile_state:
-        raise HTTPException(400, "No candidate profile uploaded. Please upload your resume first.")
+        raise HTTPException(400, "No candidate profile found. Add your profile first.")
     return data
+
+
+@router.get("/profile", response_model=CandidateProfile)
+async def get_profile():
+    data = await store.load_data()
+    if not data.current_profile_state:
+        raise HTTPException(404, "No candidate profile saved yet.")
+    return data.current_profile_state
+
+
+@router.put("/profile", response_model=CandidateProfile)
+async def save_profile(req: SaveProfileRequest):
+    """Save candidate details manually without AI parsing."""
+    profile = req.to_profile()
+    data = await store.load_data()
+    data.current_profile_state = profile
+    await store.save_data(data)
+    return profile
+
+
+@router.delete("/profile")
+async def clear_profile():
+    data = await store.load_data()
+    data.current_profile_state = None
+    await store.save_data(data)
+    return {"message": "Candidate profile cleared."}
 
 
 @router.post("/upload-profile", dependencies=[Depends(ai_guard)])
