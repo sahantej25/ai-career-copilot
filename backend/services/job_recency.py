@@ -1,10 +1,16 @@
-"""Filter job listings by how recently they were posted."""
+"""Filter and sort job listings by how recently they were posted."""
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from models.schemas import JobListing
+from models.schemas import CandidateProfile, JobListing
+from services.job_dates import has_published_at, parse_published_at, published_at_timestamp
 
 PostedWithin = Literal["24h", "3d", "7d", "anytime"]
+
+# Single source of truth for upstream fetch windows (Hiring Cafe API, etc.)
+MAX_JOB_FETCH_DAYS = 14
 
 POSTED_WITHIN_OPTIONS: tuple[tuple[PostedWithin, str, int | None], ...] = (
     ("24h", "Last 24 hours", 1),
@@ -15,6 +21,12 @@ POSTED_WITHIN_OPTIONS: tuple[tuple[PostedWithin, str, int | None], ...] = (
 
 _VALID: frozenset[str] = frozenset(v for v, _, _ in POSTED_WITHIN_OPTIONS)
 
+_RECENCY_HOURS: dict[PostedWithin, int] = {
+    "24h": 24,
+    "3d": 72,
+    "7d": 168,
+}
+
 
 def normalize_posted_within(value: str | None) -> PostedWithin:
     normalized = (value or "anytime").strip().lower()
@@ -23,25 +35,23 @@ def normalize_posted_within(value: str | None) -> PostedWithin:
     return "anytime"
 
 
+def max_job_fetch_days() -> int:
+    """Days to request from upstream aggregators — always the widest practical window."""
+    return MAX_JOB_FETCH_DAYS
+
+
 def posted_within_to_days(value: str | None) -> int:
-    """Map preference to Hiring Cafe API `dateFetchedPastNDays` (minimum 1)."""
-    mapping = {"24h": 1, "3d": 3, "7d": 7, "anytime": 14}
-    return mapping.get(normalize_posted_within(value), 14)
+    """Backward-compatible alias for upstream fetch day window."""
+    return max_job_fetch_days()
 
 
-def _parse_published_at(raw: str) -> datetime | None:
-    text = (raw or "").strip()
-    if not text:
+def recency_cutoff(posted_within: str, *, now: datetime | None = None) -> datetime | None:
+    window = normalize_posted_within(posted_within)
+    if window == "anytime":
         return None
-    try:
-        if text.endswith("Z"):
-            return datetime.fromisoformat(text.replace("Z", "+00:00"))
-        dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt
-    except ValueError:
-        return None
+    reference = now or datetime.now(timezone.utc)
+    hours = _RECENCY_HOURS[window]
+    return reference - timedelta(hours=hours)
 
 
 def job_within_recency(
@@ -55,14 +65,13 @@ def job_within_recency(
     if window == "anytime":
         return True
 
-    hours = {"24h": 24, "3d": 72, "7d": 168}[window]
-    reference = now or datetime.now(timezone.utc)
-    cutoff = reference - timedelta(hours=hours)
-
-    published = _parse_published_at(job.published_at)
+    published = parse_published_at(job.published_at, reference=now)
     if published is None:
-        # Sources like LinkedIn guest search don't expose dates — keep in results.
-        return True
+        # Without a verified posted date, only include in "anytime".
+        return False
+
+    cutoff = recency_cutoff(window, now=now)
+    assert cutoff is not None
     return published >= cutoff
 
 
@@ -74,5 +83,22 @@ def filter_jobs_by_recency(
 ) -> list[JobListing]:
     window = normalize_posted_within(posted_within)
     if window == "anytime":
-        return jobs
+        return list(jobs)
     return [j for j in jobs if job_within_recency(j, window, now=now)]
+
+
+def sort_jobs_for_display(
+    jobs: list[JobListing],
+    *,
+    profile: CandidateProfile | None = None,
+) -> list[JobListing]:
+    """Newest posted first; undated listings sink to the bottom."""
+
+    def sort_key(job: JobListing) -> tuple[float, float, str]:
+        posted_ts = published_at_timestamp(job.published_at)
+        match = float(job.match_percentage or 0) if profile else 0.0
+        # Undated jobs (posted_ts=0) sort after dated jobs.
+        dated_rank = 1.0 if has_published_at(job.published_at) else 0.0
+        return (dated_rank, posted_ts, match)
+
+    return sorted(jobs, key=sort_key, reverse=True)

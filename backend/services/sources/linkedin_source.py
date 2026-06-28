@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 import httpx
 
 from models.schemas import JobListing
-from services.job_match_scorer import strip_html
+from services.job_dates import normalize_published_at
 
 LINKEDIN_SEARCH = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 BROWSER_UA = (
@@ -13,27 +13,62 @@ BROWSER_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+_CARD_MARKER = re.compile(r'data-entity-urn="urn:li:jobPosting:(\d+)"')
+
 
 def _clean_title(raw: str) -> str:
     return re.sub(r"\s+", " ", raw).strip()
 
 
-def _parse_linkedin_html(html: str) -> list[dict]:
-    titles = [_clean_title(t) for t in re.findall(r'class="sr-only">\s*([^<]+?)\s*</span>', html)]
-    links = re.findall(r'href="(https://www.linkedin.com/jobs/view/[^"]+)"', html)
-    urns = re.findall(r'data-entity-urn="urn:li:jobPosting:(\d+)"', html)
-    companies = [c.strip() for c in re.findall(r'class="hidden-nested-link">([^<]+)</a>', html)]
-    locations = [loc.strip() for loc in re.findall(r'class="job-search-card__location">([^<]+)</span>', html)]
+def _extract_published_at(card_html: str) -> str:
+    time_match = re.search(r'<time[^>]+datetime="([^"]+)"', card_html, re.I)
+    if time_match:
+        return normalize_published_at(time_match.group(1))
 
+    listdate = re.search(
+        r'class="job-search-card__listdate[^"]*"[^>]*>\s*([^<]+?)\s*<',
+        card_html,
+        re.I,
+    )
+    if listdate:
+        return normalize_published_at(listdate.group(1))
+
+    footer = re.search(
+        r'class="job-search-card__footer-item[^"]*"[^>]*>\s*([^<]+?)\s*<',
+        card_html,
+        re.I,
+    )
+    if footer:
+        return normalize_published_at(footer.group(1))
+
+    return ""
+
+
+def _parse_linkedin_html(html: str) -> list[dict]:
     rows: list[dict] = []
-    count = min(len(urns), len(titles), len(links))
-    for i in range(count):
+    markers = list(_CARD_MARKER.finditer(html))
+    for idx, match in enumerate(markers):
+        job_id = match.group(1)
+        start = match.start()
+        end = markers[idx + 1].start() if idx + 1 < len(markers) else len(html)
+        card = html[start:end]
+
+        title_match = re.search(r'class="sr-only">\s*([^<]+?)\s*</span>', card)
+        link_match = re.search(r'href="(https://www.linkedin.com/jobs/view/[^"]+)"', card)
+        company_match = re.search(r'class="hidden-nested-link">([^<]+)</a>', card)
+        location_match = re.search(r'class="job-search-card__location">([^<]+)</span>', card)
+
+        if not title_match or not link_match:
+            continue
+
+        url = link_match.group(1).split("?")[0]
         rows.append({
-            "id": urns[i],
-            "title": titles[i],
-            "url": links[i].split("?")[0] if "?" in links[i] else links[i],
-            "company": companies[i] if i < len(companies) else "",
-            "location": locations[i] if i < len(locations) else "",
+            "id": job_id,
+            "title": _clean_title(title_match.group(1)),
+            "url": url,
+            "company": company_match.group(1).strip() if company_match else "",
+            "location": location_match.group(1).strip() if location_match else "",
+            "published_at": _extract_published_at(card),
         })
     return rows
 
@@ -79,7 +114,7 @@ async def fetch_linkedin_jobs(
                     apply_url=row["url"],
                     source="linkedin",
                     company_logo="",
-                    published_at="",
+                    published_at=row.get("published_at") or "",
                 )
             )
             if len(jobs) >= limit:

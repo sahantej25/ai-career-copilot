@@ -6,6 +6,7 @@ from urllib.parse import quote_plus
 import httpx
 
 from models.schemas import JobListing
+from services.job_dates import normalize_published_at
 from services.job_match_scorer import job_excerpt, strip_html
 
 HC_SEARCH_API = "https://hiring.cafe/api/search-jobs"
@@ -89,7 +90,9 @@ def _parse_hiringcafe_jobs(payload: dict, limit: int) -> list[JobListing]:
                 apply_url=str(apply) if apply else hiringcafe_search_url(str(title)),
                 source="hiringcafe",
                 company_logo=str(item.get("companyLogo") or ""),
-                published_at=str(item.get("postedAt") or item.get("pubDate") or ""),
+                published_at=normalize_published_at(
+                    item.get("postedAt") or item.get("pubDate") or item.get("datePosted")
+                ),
             )
         )
     return jobs

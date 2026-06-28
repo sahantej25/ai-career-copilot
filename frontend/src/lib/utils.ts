@@ -7,7 +7,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -15,13 +17,27 @@ export function formatDate(iso: string): string {
 }
 
 export function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (days === 0) return "Today";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const diffMs = Date.now() - parsed.getTime();
+  if (diffMs < 0) return "Just posted";
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
   return `${Math.floor(days / 30)}mo ago`;
+}
+
+export function formatPostedDate(iso: string): string {
+  const relative = formatRelativeTime(iso);
+  const absolute = formatDate(iso);
+  if (relative && absolute) return `${relative} · ${absolute}`;
+  return relative || absolute;
 }
 
 export const STATUS_CONFIG: Record<
