@@ -5,6 +5,7 @@ from models.schemas import (
     AuthResponse, GoogleAuthRequest, LoginRequest, RegisterRequest, UserPublic,
     JobPreferences,
 )
+from agents.location_platform_agent import apply_location_platforms
 from services import storage_service as store
 from services.auth_service import (
     authenticate_google_user,
@@ -87,6 +88,7 @@ async def update_preferences(
     prefs: JobPreferences,
     user: UserPublic = Depends(bind_user_context),
 ):
+    prefs = await apply_location_platforms(prefs)
     data = await store.load_data()
     data.job_preferences = prefs
     await store.save_data(data)
