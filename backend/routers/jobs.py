@@ -14,6 +14,7 @@ from services.job_sanitize import sanitize_job_listing
 from services.location_filter import job_matches_location
 from services import storage_service as store
 from services.job_feed_service import SOURCES, fetch_job_feed
+from services.job_recency import filter_jobs_by_recency
 from services.job_match_scorer import score_job_for_profile
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(bind_user_context)])
@@ -45,6 +46,7 @@ async def _build_live_feed(force_refresh: bool = False) -> LiveJobsResponse:
         jobs = [j for j in jobs if job_matches_location(j, loc)]
         if remote_only := prefs.remote_only:
             jobs = [j for j in jobs if j.remote]
+        jobs = filter_jobs_by_recency(jobs, prefs.posted_within)
         scored = [score_job_for_profile(j, profile) for j in jobs]
         if profile:
             scored.sort(key=lambda j: (j.match_percentage or 0), reverse=True)
@@ -64,6 +66,7 @@ async def _build_live_feed(force_refresh: bool = False) -> LiveJobsResponse:
         limit_per_source=18,
         remote_only=prefs.remote_only,
         location=prefs.location or settings.linkedin_default_location,
+        posted_within=prefs.posted_within,
     )
 
     scored: list[JobListing] = []
@@ -109,6 +112,7 @@ async def get_job_feed(
     data = await store.load_data()
     loc = sanitize_search_query(location) or data.job_preferences.location or settings.linkedin_default_location
     q = sanitize_search_query(search) or _derive_search_query(data.current_profile_state, data.job_preferences)
+    posted_within = data.job_preferences.posted_within
 
     jobs, used_sources = await fetch_job_feed(
         search=q,
@@ -116,6 +120,7 @@ async def get_job_feed(
         limit_per_source=limit,
         remote_only=remote_only,
         location=loc,
+        posted_within=posted_within,
     )
 
     profile = data.current_profile_state if match else None

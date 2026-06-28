@@ -7,7 +7,7 @@ import httpx
 from config import settings
 from models.schemas import JobListing
 from services.job_sanitize import sanitize_job_listing
-from services.location_filter import job_matches_location
+from services.job_recency import filter_jobs_by_recency, posted_within_to_days
 from services.sources.greenhouse_source import fetch_greenhouse_jobs
 from services.sources.hiringcafe_source import fetch_hiringcafe_jobs
 from services.sources.linkedin_source import fetch_linkedin_jobs
@@ -25,6 +25,7 @@ async def fetch_job_feed(
     limit_per_source: int = 15,
     remote_only: bool = False,
     location: str = "",
+    posted_within: str = "anytime",
 ) -> tuple[list[JobListing], list[str]]:
     active = [s for s in (sources or list(SOURCES)) if s in SOURCES]
     if not active:
@@ -42,7 +43,12 @@ async def fetch_job_feed(
                     fetch_greenhouse_jobs(client, settings.greenhouse_boards, search, limit_per_source)
                 )
             elif name == "hiringcafe":
-                tasks.append(fetch_hiringcafe_jobs(client, search, limit_per_source, loc))
+                tasks.append(
+                    fetch_hiringcafe_jobs(
+                        client, search, limit_per_source, loc,
+                        days=posted_within_to_days(posted_within),
+                    )
+                )
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     merged: list[JobListing] = []
@@ -67,6 +73,8 @@ async def fetch_job_feed(
                 continue
             seen_keys.add(dedupe_key)
             merged.append(sanitize_job_listing(job))
+
+    merged = filter_jobs_by_recency(merged, posted_within)
 
     def sort_key(job: JobListing):
         ts = job.published_at or ""
