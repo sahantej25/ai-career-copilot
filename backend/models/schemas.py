@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from enum import Enum
 import uuid
@@ -17,6 +17,7 @@ from services.guardrails.input import (
     sanitize_rejection_field,
     sanitize_search_query,
     sanitize_string_list,
+    sanitize_user_text,
     validate_apply_url,
     validate_track_source,
 )
@@ -70,6 +71,75 @@ class CandidateProfile(BaseModel):
     experience: list[Experience] = []
     education: list[Education] = []
     domains: list[str] = []
+
+
+class SaveProfileRequest(BaseModel):
+    """Manual candidate profile entry (no AI required)."""
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    summary: str = ""
+    skills: list[Skill] = []
+    projects: list[Project] = []
+    experience: list[Experience] = []
+    education: list[Education] = []
+    domains: list[str] = []
+
+    @field_validator("name")
+    @classmethod
+    def _sanitize_name(cls, v: str) -> str:
+        return sanitize_name(v)
+
+    @field_validator("email", "phone", "location")
+    @classmethod
+    def _sanitize_contact(cls, v: str) -> str:
+        return sanitize_user_text(v, MAX_COMPANY_ROLE_CHARS)
+
+    @field_validator("summary")
+    @classmethod
+    def _sanitize_summary(cls, v: str) -> str:
+        return sanitize_notes(v)
+
+    @field_validator("domains")
+    @classmethod
+    def _sanitize_domains(cls, v: list[str]) -> list[str]:
+        return sanitize_string_list(v)
+
+    @field_validator("skills")
+    @classmethod
+    def _clamp_skills(cls, v: list[Skill]) -> list[Skill]:
+        return v[:80]
+
+    @model_validator(mode="after")
+    def _require_content(self) -> "SaveProfileRequest":
+        if not any([
+            self.name.strip(),
+            self.email.strip(),
+            self.summary.strip(),
+            self.skills,
+            self.experience,
+            self.projects,
+            self.education,
+        ]):
+            raise ValueError(
+                "Provide at least a name, email, summary, skill, or experience entry."
+            )
+        return self
+
+    def to_profile(self) -> CandidateProfile:
+        return CandidateProfile(
+            name=self.name,
+            email=self.email,
+            phone=self.phone,
+            location=self.location,
+            summary=self.summary,
+            skills=self.skills,
+            projects=self.projects,
+            experience=self.experience,
+            education=self.education,
+            domains=self.domains,
+        )
 
 
 class ApplicationStatus(str, Enum):

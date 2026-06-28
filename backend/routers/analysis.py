@@ -94,8 +94,16 @@ async def get_global_analysis():
 @router.post("/global/refresh", response_model=GlobalAnalysis, dependencies=[Depends(ai_guard)])
 async def refresh_global_analysis():
     data = await store.load_data()
-    if not data.rejections:
-        raise HTTPException(400, "No rejections to analyze yet.")
+    rejected = [a for a in data.applications if a.status == ApplicationStatus.not_selected]
+    if not rejected:
+        raise HTTPException(
+            400,
+            "No rejections to analyze yet. Mark applications as Not Selected in Tracking first.",
+        )
+    if not data.current_profile_state:
+        raise HTTPException(400, "No candidate profile found. Add your profile first.")
+    if store.ensure_rejection_stubs(data):
+        await store.save_data(data)
     try:
         analysis = await build_global_analysis(data)
     except AIConfigurationError:

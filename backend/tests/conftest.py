@@ -39,13 +39,17 @@ def temp_data_file(tmp_path, monkeypatch):
 def client(temp_data_file, monkeypatch):
     """FastAPI test client with fresh data file and auth bypass."""
     from main import app
-    from deps.auth import bind_user_context
+    from deps.auth import bind_user_context, get_current_user
+    from deps.guardrails import ai_guard, rate_limit_ai
     from models.schemas import UserPublic
 
     async def _fake_auth():
         return UserPublic(id="test-user", email="test@test.com", name="Test User")
 
     app.dependency_overrides[bind_user_context] = _fake_auth
+    app.dependency_overrides[get_current_user] = _fake_auth
+    app.dependency_overrides[rate_limit_ai] = _fake_auth
+    app.dependency_overrides[ai_guard] = _fake_auth
     monkeypatch.setattr(
         "services.storage_service._resolve_path",
         lambda: Path(settings.data_file_path),

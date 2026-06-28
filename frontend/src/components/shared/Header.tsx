@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brain, Sparkles, Trash2 } from "lucide-react";
+import { Brain, Sparkles, Trash2, User } from "lucide-react";
 import { useAppStore } from "@/hooks/useAppStore";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +10,7 @@ import { LogOut } from "lucide-react";
 
 export function Header() {
   const profile = useAppStore((s) => s.profile);
+  const setProfileModalOpen = useAppStore((s) => s.setProfileModalOpen);
   const applications = useAppStore((s) => s.applications);
   const resetAll = useAppStore((s) => s.resetAll);
   const addToast = useAppStore((s) => s.addToast);
@@ -95,6 +96,11 @@ export function Header() {
               </div>
             </div>
           )}
+
+          <Button variant="secondary" size="sm" onClick={() => setProfileModalOpen(true)}>
+            <User className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{profile?.name ? profile.name.split(" ")[0] : "Profile"}</span>
+          </Button>
 
           <Button variant="secondary" size="sm" onClick={() => { logout(); resetAll(); addToast({ type: "info", message: "Signed out." }); }}>
             <LogOut className="h-3.5 w-3.5" />
