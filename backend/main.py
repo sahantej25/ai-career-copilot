@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from config import settings
-from routers import apply, tracking, analysis
+from routers import apply, tracking, analysis, data, jobs, auth
 
 app = FastAPI(
     title="AI Career Copilot API",
@@ -24,9 +24,12 @@ app.add_middleware(
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
+app.include_router(auth.router)
 app.include_router(apply.router)
 app.include_router(tracking.router)
 app.include_router(analysis.router)
+app.include_router(data.router)
+app.include_router(jobs.router)
 
 
 @app.get("/health")
