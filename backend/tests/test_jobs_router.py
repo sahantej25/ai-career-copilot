@@ -1,11 +1,12 @@
 from unittest.mock import AsyncMock, patch
 
-from models.schemas import JobListing
+from models.schemas import AppData, JobListing, JobPreferences
 
 
 @patch("routers.jobs.fetch_job_feed", new_callable=AsyncMock)
 @patch("routers.jobs.store.load_data", new_callable=AsyncMock)
 def test_job_feed_endpoint(mock_load, mock_fetch, client):
+    mock_load.return_value = AppData(job_preferences=JobPreferences())
     mock_fetch.return_value = (
         [
             JobListing(
@@ -19,7 +20,6 @@ def test_job_feed_endpoint(mock_load, mock_fetch, client):
         ],
         ["remotive"],
     )
-    mock_load.return_value.current_profile_state = None
 
     response = client.get("/api/jobs?limit=5&match=false")
     assert response.status_code == 200

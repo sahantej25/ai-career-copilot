@@ -14,7 +14,7 @@ from services.job_sanitize import sanitize_job_listing
 from services.location_filter import job_matches_location
 from services import storage_service as store
 from services.job_feed_service import SOURCES, fetch_job_feed
-from services.job_recency import filter_jobs_by_recency
+from services.job_recency import filter_jobs_by_recency, sort_jobs_for_display
 from services.job_match_scorer import score_job_for_profile
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(bind_user_context)])
@@ -48,8 +48,7 @@ async def _build_live_feed(force_refresh: bool = False) -> LiveJobsResponse:
             jobs = [j for j in jobs if j.remote]
         jobs = filter_jobs_by_recency(jobs, prefs.posted_within)
         scored = [score_job_for_profile(j, profile) for j in jobs]
-        if profile:
-            scored.sort(key=lambda j: (j.match_percentage or 0), reverse=True)
+        scored = sort_jobs_for_display(scored, profile=profile)
         return LiveJobsResponse(
             total=len(scored),
             sources=prefs.preferred_sources,
@@ -72,8 +71,8 @@ async def _build_live_feed(force_refresh: bool = False) -> LiveJobsResponse:
     scored: list[JobListing] = []
     for job in jobs:
         scored.append(score_job_for_profile(job, profile))
-    if profile:
-        scored.sort(key=lambda j: (j.match_percentage or 0, j.published_at or ""), reverse=True)
+    scored = filter_jobs_by_recency(scored, prefs.posted_within)
+    scored = sort_jobs_for_display(scored, profile=profile)
 
     fetched_at = now_iso()
     await store.cache_live_jobs([j.model_dump() for j in scored], fetched_at)
@@ -125,8 +124,8 @@ async def get_job_feed(
 
     profile = data.current_profile_state if match else None
     scored = [score_job_for_profile(j, profile) for j in jobs]
-    if match and profile:
-        scored.sort(key=lambda j: (j.match_percentage or 0, j.published_at or ""), reverse=True)
+    scored = filter_jobs_by_recency(scored, posted_within)
+    scored = sort_jobs_for_display(scored, profile=profile)
 
     return JobFeedResponse(total=len(scored), sources=used_sources, jobs=scored)
 

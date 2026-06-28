@@ -29,8 +29,13 @@ describe("formatDate", () => {
 });
 
 describe("formatRelativeTime", () => {
-  it("returns Today for current timestamp", () => {
-    expect(formatRelativeTime(new Date().toISOString())).toBe("Today");
+  it("returns just now for current timestamp", () => {
+    expect(formatRelativeTime(new Date().toISOString())).toBe("Just now");
+  });
+
+  it("returns hours ago for recent posts", () => {
+    const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString();
+    expect(formatRelativeTime(sixHoursAgo)).toBe("6h ago");
   });
 
   it("returns Yesterday for one day ago", () => {
