@@ -9,6 +9,7 @@ from agents.resume_pipeline import (
     _merge_tailored_with_profile,
     _parse_tailored_experience,
 )
+from agents.resume_structure_agents import infer_section_order_heuristic
 from models.schemas import TailoredExperienceEntry
 
 
@@ -121,3 +122,9 @@ def test_merge_tailored_with_profile_keeps_missing_roles():
     assert len(merged) == 2
     assert len(merged[0].bullets) == 2
     assert merged[1].company == "Beta Corp"
+
+
+def test_infer_section_order_empty_text():
+    order = infer_section_order_heuristic("")
+    assert "summary" in order
+    assert "experience" in order

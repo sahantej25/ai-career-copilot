@@ -157,6 +157,9 @@ export interface ResumePreview {
   emphasis: string;
   tailored_experience?: TailoredExperienceEntry[];
   tailoring_steps?: MatchStep[];
+  section_order?: string[];
+  ats_keywords?: string[];
+  latex_source?: string;
 }
 
 export interface ResumeStyle {

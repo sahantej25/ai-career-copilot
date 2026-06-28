@@ -22,7 +22,7 @@ from services.guardrails import (
     validate_section_order,
     wrap_untrusted_content,
 )
-from services.guardrails.constants import MAX_REFERENCE_TEXT_CHARS, MAX_RESUME_TEXT_CHARS, MAX_SKILLS
+from services.guardrails.constants import MAX_EXPERIENCE_BULLETS, MAX_REFERENCE_TEXT_CHARS, MAX_RESUME_TEXT_CHARS, MAX_SKILLS
 from services.openai_service import chat_json
 from models.schemas import CandidateProfile, Skill, Project, Experience, Education, ResumeStyle
 
@@ -113,7 +113,7 @@ async def parse_resume(file_bytes: bytes, filename: str) -> CandidateProfile:
             duration=sanitize_ai_text(e.get("duration", ""), max_len=80),
             description=[
                 sanitize_ai_text(b, max_len=400)
-                for b in (e.get("description") or [])[:15]
+                for b in (e.get("description") or [])[:MAX_EXPERIENCE_BULLETS]
                 if b
             ],
         )
