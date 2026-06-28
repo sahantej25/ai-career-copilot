@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   cn,
+  clampInput,
   formatDate,
   formatRelativeTime,
   getMatchBg,
   getMatchColor,
+  INPUT_LIMITS,
   jobPreviewText,
+  sanitizeUserInput,
   STATUS_CONFIG,
   stripHtml,
 } from "@/lib/utils";
@@ -55,6 +58,18 @@ describe("match helpers", () => {
   it("returns low-match colors below 50%", () => {
     expect(getMatchColor(30)).toContain("rose");
     expect(getMatchBg(30)).toContain("rose");
+  });
+});
+
+describe("guardrail input helpers", () => {
+  it("clamps input to max length", () => {
+    expect(clampInput("a".repeat(300), 200).length).toBeLessThanOrEqual(200);
+  });
+
+  it("sanitizes HTML before clamping", () => {
+    const cleaned = sanitizeUserInput("<b>React</b> engineer", INPUT_LIMITS.companyRole);
+    expect(cleaned).toBe("React engineer");
+    expect(cleaned).not.toContain("<");
   });
 });
 

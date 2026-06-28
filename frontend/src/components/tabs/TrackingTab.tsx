@@ -11,7 +11,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAppStore } from "@/hooks/useAppStore";
-import { cn, STATUS_CONFIG, SOURCE_LABELS, formatRelativeTime, getMatchColor } from "@/lib/utils";
+import { cn, STATUS_CONFIG, SOURCE_LABELS, formatRelativeTime, getMatchColor, INPUT_LIMITS, sanitizeUserInput } from "@/lib/utils";
 import * as api from "@/lib/api";
 import type { Application, ApplicationStatus } from "@/types";
 
@@ -224,10 +224,10 @@ export function TrackingTab() {
     setLoading("add-external", true);
     try {
       const app = await api.trackJob({
-        company: extForm.company.trim(),
-        role: extForm.role.trim(),
+        company: sanitizeUserInput(extForm.company, INPUT_LIMITS.companyRole),
+        role: sanitizeUserInput(extForm.role, INPUT_LIMITS.companyRole),
         apply_url: extForm.apply_url.trim(),
-        job_description: extForm.job_description.trim(),
+        job_description: sanitizeUserInput(extForm.job_description, INPUT_LIMITS.jobDescription),
         source: "manual",
         status: "submitted",
       });

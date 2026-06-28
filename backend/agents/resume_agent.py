@@ -8,6 +8,12 @@ rejection annotations). Skills weakened by rejection analysis simply sink in pri
 from typing import Optional
 
 from models.schemas import CandidateProfile, ResumeStyle, ResumePreviewResponse
+from services.guardrails import (
+    sanitize_ai_string_list,
+    sanitize_ai_text,
+    scrub_forbidden_phrases,
+    wrap_untrusted_content,
+)
 from services.openai_service import chat_json
 from services.pdf_service import generate_resume_pdf
 
@@ -33,15 +39,15 @@ async def build_resume_package(
     job_description: str,
     style: Optional[ResumeStyle] = None,
 ) -> ResumePreviewResponse:
-    # Order skills by confidence so rejection-weakened skills naturally sink.
     sorted_skills = sorted(profile.skills, key=lambda s: s.confidence, reverse=True)
     skill_names = [s.name for s in sorted_skills]
 
     style_ctx = ""
     if style:
         style_ctx = (
-            f"\nReference style to emulate — tone: {style.tone}; "
-            f"section order: {', '.join(style.section_order)}; notes: {style.notes}"
+            f"\nReference style to emulate — tone: {sanitize_ai_text(style.tone, 120)}; "
+            f"section order: {', '.join(style.section_order)}; "
+            f"notes: {sanitize_ai_text(style.notes, 300)}"
         )
 
     candidate_ctx = (
@@ -53,20 +59,24 @@ async def build_resume_package(
         f"{style_ctx}"
     )
 
-    payload = f"{candidate_ctx}\n\n---\nJob Description:\n{job_description[:4000]}"
-    data = await chat_json(_SYSTEM, payload, temperature=0.4)
+    jd_block = wrap_untrusted_content("job_description", job_description)
+    payload = f"{candidate_ctx}\n\n---\n{jd_block}"
+    data = await chat_json(_SYSTEM, payload, temperature=0.4, agent="resume_generation")
 
-    ordered = data.get("ordered_skills") or skill_names
-    # Guarantee every profile skill is present, JD-relevant ones first.
+    ordered = sanitize_ai_string_list(data.get("ordered_skills")) or skill_names
     seen = {s.lower() for s in ordered}
     ordered += [s for s in skill_names if s.lower() not in seen]
 
+    summary = scrub_forbidden_phrases(
+        sanitize_ai_text(data.get("tailored_summary", profile.summary), max_len=800)
+    )
+
     return ResumePreviewResponse(
-        tailored_summary=data.get("tailored_summary", profile.summary),
+        tailored_summary=summary or profile.summary,
         ordered_skills=ordered,
-        highlighted_projects=data.get("highlighted_projects", []),
-        key_achievements=data.get("key_achievements", []),
-        emphasis=data.get("emphasis", ""),
+        highlighted_projects=sanitize_ai_string_list(data.get("highlighted_projects")),
+        key_achievements=sanitize_ai_string_list(data.get("key_achievements")),
+        emphasis=scrub_forbidden_phrases(sanitize_ai_text(data.get("emphasis", ""), max_len=300)),
     )
 
 

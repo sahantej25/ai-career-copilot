@@ -19,6 +19,12 @@ class Settings(BaseSettings):
         "cloudflare", "openai", "databricks", "scaleai", "brex", "ramp",
     ]
     google_client_id: str = ""
+    # AI guardrails
+    ai_rate_limit_requests: int = 30
+    ai_rate_limit_window_seconds: int = 3600
+    openai_max_tokens: int = 4096
+    openai_timeout_seconds: float = 60.0
+    max_request_body_mb: int = 12
 
     class Config:
         env_file = ".env"

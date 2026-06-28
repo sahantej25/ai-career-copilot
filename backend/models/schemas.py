@@ -1,8 +1,27 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from enum import Enum
 import uuid
 from datetime import datetime
+
+from services.guardrails.constants import (
+    MAX_COMPANY_ROLE_CHARS,
+    MAX_JOB_DESCRIPTION_CHARS,
+)
+from services.guardrails.input import (
+    filter_job_sources,
+    sanitize_company_role,
+    sanitize_job_description,
+    sanitize_name,
+    sanitize_notes,
+    sanitize_rejection_field,
+    sanitize_search_query,
+    sanitize_string_list,
+    validate_apply_url,
+    validate_track_source,
+)
+from services.guardrails.ids import sanitize_external_job_id, sanitize_job_id, sanitize_resource_id
+from services.guardrails.output import clamp_percentage
 
 
 def generate_id() -> str:
@@ -146,6 +165,21 @@ class JobPreferences(BaseModel):
     remote_only: bool = False
     preferred_sources: list[str] = Field(default_factory=lambda: ["linkedin", "greenhouse", "hiringcafe"])
 
+    @field_validator("search_query")
+    @classmethod
+    def _sanitize_search(cls, v: str) -> str:
+        return sanitize_search_query(v)
+
+    @field_validator("location")
+    @classmethod
+    def _sanitize_location(cls, v: str) -> str:
+        return sanitize_search_query(v) or "United States"
+
+    @field_validator("preferred_sources")
+    @classmethod
+    def _sanitize_sources(cls, v: list[str]) -> list[str]:
+        return filter_job_sources(v)
+
 
 class AppData(BaseModel):
     metadata: dict = Field(default_factory=lambda: {
@@ -173,6 +207,19 @@ class MatchRequest(BaseModel):
     company: str = ""
     role: str = ""
 
+    @field_validator("job_description")
+    @classmethod
+    def _sanitize_jd(cls, v: str) -> str:
+        cleaned = sanitize_job_description(v)
+        if not cleaned.strip():
+            raise ValueError("Job description is required.")
+        return cleaned
+
+    @field_validator("company", "role")
+    @classmethod
+    def _sanitize_short_text(cls, v: str) -> str:
+        return sanitize_company_role(v)
+
 
 class MatchResponse(BaseModel):
     match_percentage: float
@@ -189,6 +236,24 @@ class GenerateResumeRequest(BaseModel):
     company: str = ""
     role: str = ""
     skills_required: list[str] = []
+
+    @field_validator("job_description")
+    @classmethod
+    def _sanitize_jd(cls, v: str) -> str:
+        cleaned = sanitize_job_description(v)
+        if not cleaned.strip():
+            raise ValueError("Job description is required.")
+        return cleaned
+
+    @field_validator("company", "role")
+    @classmethod
+    def _sanitize_short_text(cls, v: str) -> str:
+        return sanitize_company_role(v)
+
+    @field_validator("skills_required")
+    @classmethod
+    def _sanitize_skills(cls, v: list[str]) -> list[str]:
+        return sanitize_string_list(v)
 
 
 class ResumePreviewResponse(BaseModel):
@@ -213,6 +278,53 @@ class SubmitApplicationRequest(BaseModel):
     notes: str = ""
     status: ApplicationStatus = ApplicationStatus.submitted
 
+    @field_validator("company", "role")
+    @classmethod
+    def _sanitize_short(cls, v: str) -> str:
+        cleaned = sanitize_company_role(v)
+        if not cleaned:
+            raise ValueError("Company and role are required.")
+        return cleaned
+
+    @field_validator("job_description")
+    @classmethod
+    def _sanitize_jd(cls, v: str) -> str:
+        return sanitize_job_description(v)
+
+    @field_validator("matched_skills", "missing_skills")
+    @classmethod
+    def _sanitize_lists(cls, v: list[str]) -> list[str]:
+        return sanitize_string_list(v)
+
+    @field_validator("notes")
+    @classmethod
+    def _sanitize_notes(cls, v: str) -> str:
+        return sanitize_notes(v)
+
+    @field_validator("apply_url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        if not v:
+            return ""
+        return validate_apply_url(v)
+
+    @field_validator("match_percentage")
+    @classmethod
+    def _clamp_match(cls, v: float) -> float:
+        return clamp_percentage(v)
+
+    @field_validator("source")
+    @classmethod
+    def _validate_source(cls, v: str) -> str:
+        return validate_track_source(v)
+
+    @field_validator("external_job_id")
+    @classmethod
+    def _sanitize_external_id(cls, v: str) -> str:
+        if not v:
+            return ""
+        return sanitize_external_job_id(v)
+
 
 class TrackJobRequest(BaseModel):
     """Log a job from Discover or an external URL (Jobright-style tracker)."""
@@ -228,11 +340,70 @@ class TrackJobRequest(BaseModel):
     status: ApplicationStatus = ApplicationStatus.submitted
     notes: str = ""
 
+    @field_validator("company", "role")
+    @classmethod
+    def _sanitize_short(cls, v: str) -> str:
+        cleaned = sanitize_company_role(v)
+        if not cleaned:
+            raise ValueError("Company and role are required.")
+        return cleaned
+
+    @field_validator("job_description")
+    @classmethod
+    def _sanitize_jd(cls, v: str) -> str:
+        return sanitize_job_description(v)
+
+    @field_validator("matched_skills", "missing_skills")
+    @classmethod
+    def _sanitize_lists(cls, v: list[str]) -> list[str]:
+        return sanitize_string_list(v)
+
+    @field_validator("notes")
+    @classmethod
+    def _sanitize_notes(cls, v: str) -> str:
+        return sanitize_notes(v)
+
+    @field_validator("apply_url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        if not v:
+            return ""
+        return validate_apply_url(v)
+
+    @field_validator("match_percentage")
+    @classmethod
+    def _clamp_match(cls, v: float) -> float:
+        return clamp_percentage(v)
+
+    @field_validator("source")
+    @classmethod
+    def _validate_source(cls, v: str) -> str:
+        return validate_track_source(v)
+
+    @field_validator("external_job_id")
+    @classmethod
+    def _sanitize_external_id(cls, v: str) -> str:
+        if not v:
+            return ""
+        return sanitize_external_job_id(v)
+
 
 class UpdateApplicationRequest(BaseModel):
     notes: Optional[str] = None
     follow_up_at: Optional[str] = None
     apply_url: Optional[str] = None
+
+    @field_validator("notes")
+    @classmethod
+    def _sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
+        return sanitize_notes(v) if v is not None else None
+
+    @field_validator("apply_url")
+    @classmethod
+    def _validate_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not v.strip():
+            return v
+        return validate_apply_url(v)
 
 
 class UpdateStatusRequest(BaseModel):
@@ -241,12 +412,29 @@ class UpdateStatusRequest(BaseModel):
 
 class AnalyzeRejectionRequest(BaseModel):
     application_id: str
-    notes: str = ""                      # free-text rejection notes (primary input)
+    notes: str = ""
     interview_experience: str = ""
     rejection_email: str = ""
     topics_struggled: str = ""
     missing_skills: str = ""
     recruiter_feedback: str = ""
+
+    @field_validator("application_id")
+    @classmethod
+    def _sanitize_app_id(cls, v: str) -> str:
+        return sanitize_resource_id(v, field_name="application_id")
+
+    @field_validator(
+        "notes",
+        "interview_experience",
+        "rejection_email",
+        "topics_struggled",
+        "missing_skills",
+        "recruiter_feedback",
+    )
+    @classmethod
+    def _sanitize_rejection_fields(cls, v: str) -> str:
+        return sanitize_rejection_field(v)
 
 
 class AnalyzeRejectionResponse(BaseModel):
@@ -305,14 +493,56 @@ class RegisterRequest(BaseModel):
     password: str
     name: str = ""
 
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        email = v.strip().lower()
+        if "@" not in email or len(email) > 254:
+            raise ValueError("Invalid email address.")
+        return email
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters.")
+        if len(v) > 128:
+            raise ValueError("Password is too long.")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _sanitize_name(cls, v: str) -> str:
+        return sanitize_name(v)
+
 
 class LoginRequest(BaseModel):
     email: str
     password: str
 
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def _limit_password(cls, v: str) -> str:
+        if len(v) > 128:
+            raise ValueError("Invalid credentials.")
+        return v
+
 
 class GoogleAuthRequest(BaseModel):
     credential: str
+
+    @field_validator("credential")
+    @classmethod
+    def _limit_credential(cls, v: str) -> str:
+        token = (v or "").strip()
+        if not token or len(token) > 8192:
+            raise ValueError("Invalid Google credential.")
+        return token
 
 
 class AuthResponse(BaseModel):

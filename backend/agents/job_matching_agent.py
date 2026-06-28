@@ -3,6 +3,13 @@ Analyzes a JD against the current profile → match %, required/matched/missing 
 and auto-extracts the company name and role from the JD when possible.
 """
 from models.schemas import CandidateProfile, MatchResponse
+from services.guardrails import (
+    clamp_percentage,
+    sanitize_ai_string_list,
+    sanitize_ai_text,
+    sanitize_company_role,
+    wrap_untrusted_content,
+)
 from services.openai_service import chat_json
 
 
@@ -44,23 +51,25 @@ async def match_job(
 
     hints = ""
     if company_hint:
-        hints += f"\nUser-provided company (authoritative): {company_hint}"
+        hints += f"\nUser-provided company (authoritative): {sanitize_company_role(company_hint)}"
     if role_hint:
-        hints += f"\nUser-provided role (authoritative): {role_hint}"
+        hints += f"\nUser-provided role (authoritative): {sanitize_company_role(role_hint)}"
 
-    payload = f"{candidate_ctx}{hints}\n\n---\nJob Description:\n{job_description[:4000]}"
-    data = await chat_json(_SYSTEM, payload)
+    jd_block = wrap_untrusted_content("job_description", job_description)
+    payload = f"{candidate_ctx}{hints}\n\n---\n{jd_block}"
+    data = await chat_json(_SYSTEM, payload, agent="job_matching")
 
-    # Prefer user-provided values; fall back to AI-extracted.
-    company = company_hint.strip() or str(data.get("company", "")).strip()
-    role = role_hint.strip() or str(data.get("role", "")).strip()
+    company = sanitize_company_role(company_hint) or sanitize_company_role(
+        str(data.get("company", ""))
+    )
+    role = sanitize_company_role(role_hint) or sanitize_company_role(str(data.get("role", "")))
 
     return MatchResponse(
-        match_percentage=float(data.get("match_percentage", 0)),
-        matched_skills=data.get("matched_skills", []),
-        missing_skills=data.get("missing_skills", []),
-        job_required_skills=data.get("job_required_skills", []),
-        recommendation=data.get("recommendation", ""),
+        match_percentage=clamp_percentage(data.get("match_percentage", 0)),
+        matched_skills=sanitize_ai_string_list(data.get("matched_skills")),
+        missing_skills=sanitize_ai_string_list(data.get("missing_skills")),
+        job_required_skills=sanitize_ai_string_list(data.get("job_required_skills")),
+        recommendation=sanitize_ai_text(data.get("recommendation", ""), max_len=500),
         company=company,
         role=role,
     )

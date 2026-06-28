@@ -7,6 +7,9 @@ from models.schemas import (
     LiveJobsResponse, UserPublic, now_iso,
 )
 
+from services.guardrails import filter_job_sources, sanitize_search_query
+from services.guardrails.constants import ALLOWED_JOB_SOURCES
+from services.guardrails.ids import sanitize_job_id
 from services.job_sanitize import sanitize_job_listing
 from services.location_filter import job_matches_location
 from services import storage_service as store
@@ -101,9 +104,11 @@ async def get_job_feed(
     user: UserPublic = Depends(bind_user_context),
 ):
     source_list = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
+    if source_list:
+        source_list = filter_job_sources(source_list)
     data = await store.load_data()
-    loc = location or data.job_preferences.location or settings.linkedin_default_location
-    q = search or _derive_search_query(data.current_profile_state, data.job_preferences)
+    loc = sanitize_search_query(location) or data.job_preferences.location or settings.linkedin_default_location
+    q = sanitize_search_query(search) or _derive_search_query(data.current_profile_state, data.job_preferences)
 
     jobs, used_sources = await fetch_job_feed(
         search=q,
@@ -140,12 +145,17 @@ async def get_job(
     match: bool = Query(True),
     user: UserPublic = Depends(bind_user_context),
 ):
-    source = job_id.split(":", 1)[0] if ":" in job_id else ""
-    if source not in SOURCES:
+    try:
+        safe_job_id = sanitize_job_id(job_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    source = safe_job_id.split(":", 1)[0] if ":" in safe_job_id else ""
+    if source not in ALLOWED_JOB_SOURCES:
         raise HTTPException(404, "Unknown job source")
 
     jobs, _ = await fetch_job_feed(sources=[source], limit_per_source=50)
-    found = next((j for j in jobs if j.id == job_id), None)
+    found = next((j for j in jobs if j.id == safe_job_id), None)
     if not found:
         raise HTTPException(404, "Job not found")
 
