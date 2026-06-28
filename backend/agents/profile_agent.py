@@ -44,6 +44,8 @@ Return ONLY valid JSON with this exact schema:
 Confidence is 0-100 based on how prominently the skill appears. Category is one of:
 programming, framework, database, cloud, tool, soft-skill, domain, other.
 Do not invent credentials, employers, or skills not present in the resume text.
+Extract EVERY bullet point under each role — do not summarize, merge, or drop bullets.
+Preserve the original resume section structure and ordering.
 """
 
 
