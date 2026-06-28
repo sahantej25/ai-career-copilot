@@ -12,7 +12,8 @@ import { useAppStore } from "@/hooks/useAppStore";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { cn, formatRelativeTime, getMatchColor, jobPreviewText, SOURCE_LABELS, stripHtml } from "@/lib/utils";
 import * as api from "@/lib/api";
-import type { JobListing } from "@/types";
+import type { JobListing, PostedWithin } from "@/types";
+import { POSTED_WITHIN_OPTIONS } from "@/types";
 
 function MatchBadge({ score }: { score?: number | null }) {
   if (score == null) return null;
@@ -157,17 +158,24 @@ export function DiscoverTab() {
   const [draftSearch, setDraftSearch] = useState(jobPreferences?.search_query || "");
   const [location, setLocation] = useState(jobPreferences?.location || "United States");
   const [remoteOnly, setRemoteOnly] = useState(jobPreferences?.remote_only || false);
+  const [postedWithin, setPostedWithin] = useState<PostedWithin>(
+    jobPreferences?.posted_within || "anytime"
+  );
   const [trackingId, setTrackingId] = useState<string | null>(null);
 
   const loading = isLoading["jobs"] ?? false;
 
-  const loadJobs = useCallback(async (force = false, prefsOverride?: { search?: string; location?: string; remoteOnly?: boolean }) => {
+  const loadJobs = useCallback(async (
+    force = false,
+    prefsOverride?: { search?: string; location?: string; remoteOnly?: boolean; postedWithin?: PostedWithin },
+  ) => {
     setLoading("jobs", true);
     try {
       const prefs = {
         search_query: prefsOverride?.search ?? draftSearch.trim(),
         location: prefsOverride?.location ?? location,
         remote_only: prefsOverride?.remoteOnly ?? remoteOnly,
+        posted_within: prefsOverride?.postedWithin ?? postedWithin,
         preferred_sources: jobPreferences?.preferred_sources || ["linkedin", "greenhouse", "hiringcafe"],
       };
       await api.updateJobPreferences(prefs);
@@ -182,7 +190,7 @@ export function DiscoverTab() {
     } finally {
       setLoading("jobs", false);
     }
-  }, [refreshLiveJobs, jobPreferences, draftSearch, location, remoteOnly, addToast, setLoading]);
+  }, [refreshLiveJobs, jobPreferences, draftSearch, location, remoteOnly, postedWithin, addToast, setLoading]);
 
   useEffect(() => {
     setJobs(liveJobs);
@@ -216,6 +224,7 @@ export function DiscoverTab() {
     setDraftSearch(jobPreferences.search_query || "");
     setLocation(jobPreferences.location || "United States");
     setRemoteOnly(jobPreferences.remote_only || false);
+    setPostedWithin(jobPreferences.posted_within || "anytime");
   }, [jobPreferences]);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -340,6 +349,24 @@ export function DiscoverTab() {
             >
               Remote only
             </button>
+            {POSTED_WITHIN_OPTIONS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setPostedWithin(value);
+                  loadJobs(true, { postedWithin: value });
+                }}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                  postedWithin === value
+                    ? "border-brand-300 bg-brand-50 text-brand-700"
+                    : "border-slate-200 bg-white text-ink-600 hover:border-slate-300"
+                )}
+              >
+                {label}
+              </button>
+            ))}
             {sources.map((s) => (
               <Badge key={s} variant="info" className="text-[10px]">
                 {SOURCE_LABELS[s] || s}
