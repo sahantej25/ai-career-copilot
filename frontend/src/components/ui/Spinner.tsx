@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { Brain } from "lucide-react";
 
 interface SpinnerProps {
   size?: "sm" | "md" | "lg";
@@ -12,61 +13,58 @@ const sizes = { sm: "h-4 w-4", md: "h-8 w-8", lg: "h-12 w-12" };
 export function Spinner({ size = "md", className, label }: SpinnerProps) {
   return (
     <div className={cn("flex flex-col items-center gap-3", className)}>
-      <svg
-        className={cn("animate-spin text-indigo-400", sizes[size])}
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          className="opacity-20"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="4"
-        />
-        <path
-          className="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-        />
+      <svg className={cn("animate-spin text-brand-400", sizes[size])} fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
       </svg>
-      {label && <p className="text-sm text-slate-400 animate-pulse">{label}</p>}
+      {label && <p className="text-sm text-ink-500 animate-pulse">{label}</p>}
     </div>
   );
 }
 
 export function AIThinkingAnimation({ label = "AI is analyzing..." }: { label?: string }) {
   return (
-    <div className="flex flex-col items-center gap-4 py-8">
-      <div className="relative w-16 h-16">
+    <div className="flex flex-col items-center gap-5 py-10">
+      <div className="relative w-20 h-20">
+        {/* Pulsing aura rings */}
         <motion.div
-          className="absolute inset-0 rounded-full border-2 border-indigo-500/30"
-          animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0, 0.6] }}
-          transition={{ duration: 2, repeat: Infinity }}
+          className="absolute inset-0 rounded-full border border-brand-500/50"
+          animate={{ scale: [1, 1.5, 1], opacity: [0.6, 0, 0.6] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut" }}
         />
         <motion.div
-          className="absolute inset-2 rounded-full border-2 border-purple-500/40"
-          animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0, 0.8] }}
-          transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
+          className="absolute inset-2 rounded-full border border-teal-500/50"
+          animate={{ scale: [1, 1.4, 1], opacity: [0.8, 0, 0.8] }}
+          transition={{ duration: 2.4, repeat: Infinity, delay: 0.4, ease: "easeOut" }}
         />
-        <div className="absolute inset-4 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-          </svg>
-        </div>
+        {/* Orbiting dot */}
+        <motion.div
+          className="absolute inset-0"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+        >
+          <span className="absolute left-1/2 -top-0.5 -translate-x-1/2 w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_12px_2px_rgba(56,189,248,0.7)]" />
+        </motion.div>
+        {/* Core */}
+        <motion.div
+          className="absolute inset-5 rounded-2xl bg-gradient-to-br from-brand-500 to-teal-600 flex items-center justify-center shadow-glow"
+          animate={{ scale: [1, 1.08, 1] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <Brain className="w-5 h-5 text-white" />
+        </motion.div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex gap-1.5">
         {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
-            className="w-2 h-2 rounded-full bg-indigo-400"
-            animate={{ y: [0, -8, 0] }}
-            transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+            className="w-2 h-2 rounded-full bg-gradient-to-br from-brand-400 to-teal-400"
+            animate={{ y: [0, -9, 0], opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.18, ease: "easeInOut" }}
           />
         ))}
       </div>
-      <p className="text-sm text-slate-400">{label}</p>
+      <p className="text-sm text-ink-500">{label}</p>
     </div>
   );
 }
