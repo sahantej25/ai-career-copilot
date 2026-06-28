@@ -2,7 +2,14 @@
 from models.schemas import CandidateProfile, Experience, MatchContextInput, Project, Skill
 from agents.shared.profile_context import build_profile_context
 from agents.matching_pipeline import _parse_score_breakdown, _parse_steps
-from agents.resume_pipeline import _fallback_experience, _match_context_block, _parse_tailored_experience
+from agents.resume_pipeline import (
+    _ensure_bullet_count,
+    _fallback_experience,
+    _match_context_block,
+    _merge_tailored_with_profile,
+    _parse_tailored_experience,
+)
+from models.schemas import TailoredExperienceEntry
 
 
 def _sample_profile() -> CandidateProfile:
@@ -70,3 +77,47 @@ def test_parse_tailored_experience_from_llm():
         profile,
     )
     assert entries[0].bullets == ["Delivered X"]
+
+
+def test_ensure_bullet_count_pads_missing_rewrites():
+    original = [
+        "Built React dashboards serving 50k users",
+        "Led migration to TypeScript across 12 services",
+        "Mentored 4 junior engineers",
+    ]
+    result = _ensure_bullet_count(["Built React dashboards serving 50k users"], original)
+    assert len(result) == 3
+    assert result[0] == "Built React dashboards serving 50k users"
+    assert "TypeScript" in result[1]
+
+
+def test_merge_tailored_with_profile_keeps_missing_roles():
+    profile = CandidateProfile(
+        name="Jane Doe",
+        experience=[
+            Experience(
+                company="Acme",
+                role="Senior Engineer",
+                duration="2020 – Present",
+                description=["Bullet A", "Bullet B"],
+            ),
+            Experience(
+                company="Beta Corp",
+                role="Engineer",
+                duration="2018 – 2020",
+                description=["Legacy work"],
+            ),
+        ],
+    )
+    tailored = [
+        TailoredExperienceEntry(
+            company="Acme",
+            role="Senior Engineer",
+            duration="2020 – Present",
+            bullets=["Tailored A"],
+        )
+    ]
+    merged = _merge_tailored_with_profile(tailored, profile)
+    assert len(merged) == 2
+    assert len(merged[0].bullets) == 2
+    assert merged[1].company == "Beta Corp"
