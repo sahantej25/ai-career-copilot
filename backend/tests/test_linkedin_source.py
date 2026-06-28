@@ -10,6 +10,7 @@ SAMPLE_HTML = """
     <span class="sr-only">Software Engineer</span>
     <a class="hidden-nested-link">Acme Corp</a>
     <span class="job-search-card__location">San Francisco, CA</span>
+    <time datetime="2026-06-26T08:00:00">1 day ago</time>
   </div>
 </li>
 """
@@ -22,6 +23,7 @@ def test_parse_linkedin_html():
     assert rows[0]["title"] == "Software Engineer"
     assert rows[0]["company"] == "Acme Corp"
     assert "linkedin.com/jobs/view" in rows[0]["url"]
+    assert rows[0]["published_at"] == "2026-06-26T08:00:00Z"
 
 
 def test_clean_title():
