@@ -163,6 +163,7 @@ class JobPreferences(BaseModel):
     search_query: str = ""
     location: str = "United States"
     remote_only: bool = False
+    posted_within: str = "anytime"  # 24h | 3d | 7d | anytime
     preferred_sources: list[str] = Field(default_factory=lambda: ["linkedin", "greenhouse", "hiringcafe"])
 
     @field_validator("search_query")
@@ -174,6 +175,13 @@ class JobPreferences(BaseModel):
     @classmethod
     def _sanitize_location(cls, v: str) -> str:
         return sanitize_search_query(v) or "United States"
+
+    @field_validator("posted_within")
+    @classmethod
+    def _validate_posted_within(cls, v: str) -> str:
+        from services.job_recency import normalize_posted_within
+
+        return normalize_posted_within(v)
 
     @field_validator("preferred_sources")
     @classmethod

@@ -175,12 +175,22 @@ export interface JobFeedResponse {
   fetched_at: string;
 }
 
+export type PostedWithin = "24h" | "3d" | "7d" | "anytime";
+
 export interface JobPreferences {
   search_query: string;
   location: string;
   remote_only: boolean;
+  posted_within: PostedWithin;
   preferred_sources: string[];
 }
+
+export const POSTED_WITHIN_OPTIONS: { value: PostedWithin; label: string }[] = [
+  { value: "24h", label: "Last 24 hours" },
+  { value: "3d", label: "Last 3 days" },
+  { value: "7d", label: "Last week" },
+  { value: "anytime", label: "Anytime" },
+];
 
 export interface LiveJobsResponse extends JobFeedResponse {
   from_cache?: boolean;
