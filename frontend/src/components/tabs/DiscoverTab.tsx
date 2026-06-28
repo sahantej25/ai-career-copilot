@@ -183,12 +183,12 @@ export function DiscoverTab() {
         posted_within: prefsOverride?.postedWithin ?? postedWithin,
         preferred_sources: jobPreferences?.preferred_sources || ["linkedin", "greenhouse", "hiringcafe"],
       };
-      await api.updateJobPreferences(prefs);
-      useAuthStore.getState().setJobPreferences(prefs);
+      const updated = await api.updateJobPreferences(prefs);
+      useAuthStore.getState().setJobPreferences(updated);
       await refreshLiveJobs(force);
       const storeJobs = useAuthStore.getState().liveJobs;
       setJobs(storeJobs);
-      setSources(prefs.preferred_sources);
+      setSources(updated.preferred_sources);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Failed to load jobs";
       addToast({ type: "error", message: msg });
@@ -320,10 +320,18 @@ export function DiscoverTab() {
           </div>
           <input
             className="input-field sm:w-48"
-            placeholder="Location (LinkedIn)"
+            placeholder="Location (e.g. India, United States)"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
+            list="discover-locations"
           />
+          <datalist id="discover-locations">
+            <option value="India" />
+            <option value="United States" />
+            <option value="United Kingdom" />
+            <option value="Bengaluru, India" />
+            <option value="Mumbai, India" />
+          </datalist>
             <div className="flex gap-2">
               <Button type="submit" disabled={loading}>
                 <Search className="h-4 w-4" /> Search

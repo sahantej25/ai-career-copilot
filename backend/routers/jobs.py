@@ -14,6 +14,7 @@ from services.job_sanitize import sanitize_job_listing
 from services.location_filter import job_matches_location
 from services import storage_service as store
 from services.job_feed_service import SOURCES, fetch_job_feed
+from services.location_registry import match_location_profile
 from services.job_recency import filter_jobs_by_recency, sort_jobs_for_display
 from services.job_match_scorer import score_job_for_profile
 
@@ -131,15 +132,35 @@ async def get_job_feed(
 
 
 @router.get("/sources")
-async def list_job_sources():
+async def list_job_sources(location: str = Query("", description="Resolve regional platforms for a location")):
+    profile = match_location_profile(location)
     return {
         "sources": list(SOURCES),
+        "regional_sources": list(profile.fetch_sources),
+        "researched_platforms": list(profile.researched_platforms),
         "descriptions": {
             "linkedin": "Live LinkedIn job postings",
             "greenhouse": "Real Greenhouse career page listings",
             "hiringcafe": "Hiring Cafe multi-board aggregator",
+            "shine": "Shine.com — India job board (live API)",
+            "naukri": "Naukri.com — India's largest job portal",
+            "indeed_india": "Indeed India — multi-board aggregator",
         },
         "greenhouse_boards": settings.greenhouse_boards,
+    }
+
+
+@router.get("/platforms")
+async def resolve_platforms(location: str = Query(..., min_length=1)):
+    """Return top platforms for a location (registry + guardrailed agent metadata)."""
+    from agents.location_platform_agent import resolve_platforms_for_location
+
+    sources, rationale, researched = await resolve_platforms_for_location(location, use_ai=False)
+    return {
+        "location": location,
+        "fetch_sources": sources,
+        "researched_platforms": list(researched),
+        "rationale": rationale,
     }
 
 
