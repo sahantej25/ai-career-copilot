@@ -1,6 +1,6 @@
 # AI Career Copilot — Architecture Document
 
-> Last updated: reflects step-by-step matching & resume tailoring pipelines, guardrails, auth, job discovery, and CI.
+> Last updated: reflects multi-agent resume tailoring (LaTeX/DOCX), step-by-step matching, guardrails, auth, job discovery, and CI.
 
 ---
 
@@ -40,7 +40,9 @@ Upload resume → Profile Agent parses skills, experience, projects
        ↓
 Apply to jobs → Matching Pipeline scores fit vs JD (step-by-step)
        ↓
-Generate resume → Resume Pipeline tailors bullets to JD + match analysis
+Generate resume → Multi-agent Resume Pipeline tailors content to JD + ATS (structure preserved)
+       ↓
+Export → LaTeX source → pdflatex PDF (ReportLab fallback) · structured DOCX
        ↓
 Rejection → Learning Agent adjusts skill confidence + recommendations
        ↓
@@ -82,25 +84,100 @@ Step 3 — Score & recommend
 
 **Response (`MatchResponse`):** score, skills, recommendation, `matching_steps`, `score_breakdown`, `experience_highlights`
 
-### 3.3 Agent 3 — Resume Tailoring (`resume_pipeline.py`)
+### 3.3 Agent 3 — Resume Tailoring (`resume_pipeline.py` + `resume_structure_agents.py`)
 
-**Step-by-step pipeline** (2 LLM calls, uses match context):
+**Multi-agent pipeline** — preserves original resume structure and full content while optimizing for ATS. All agents return **structured JSON** via `openai_service.chat_json()` and are wrapped by guardrails (`wrap_untrusted_content`, `sanitize_ai_text`, `apply_agent_policy`, per-agent `agent=` tags).
+
+#### Architecture diagram
 
 ```
-Step 1 — Plan tailoring
-  → priority experience/projects, keywords to weave, tailoring plan
-
-Step 2 — Produce package
-  → tailored_summary, ordered_skills, highlighted_projects
-  → tailored_experience[] with REWRITTEN bullets per role (JD-aligned)
-  → key_achievements, emphasis, tailoring_steps[]
+                    ┌─────────────────────────────────────────┐
+                    │  Inputs                                  │
+                    │  • CandidateProfile                      │
+                    │  • ResumeSnapshot (raw text + sections)  │
+                    │  • Job description + MatchContextInput   │
+                    │  • ResumeStyle (optional reference tone)   │
+                    └──────────────────┬──────────────────────┘
+                                       │
+         ┌─────────────────────────────┴─────────────────────────────┐
+         │ STEP 0 — Parallel (asyncio.gather)                        │
+         ├─────────────────────────────┬───────────────────────────────┤
+         │ resume_step0_structure      │ resume_step0_ats            │
+         │ analyze_resume_structure()  │ extract_ats_keywords()      │
+         │ → section_order[]           │ → primary/secondary keywords│
+         │ → sections_found[]          │ → all_keywords[]            │
+         └─────────────────────────────┴───────────────────────────────┘
+                                       │
+                                       ▼
+         ┌─────────────────────────────────────────────────────────────┐
+         │ STEP 1 — resume_step1_plan                                  │
+         │ Plan tailoring: priority roles/projects, keywords_to_weave, │
+         │ experience_order, tailoring_steps[]                         │
+         └─────────────────────────────┬───────────────────────────────┘
+                                       │
+         ┌─────────────────────────────┴───────────────────────────────┐
+         │ STEP 2 — Parallel section agents (asyncio.gather)           │
+         ├──────────────┬──────────────┬──────────────┬──────────────┤
+         │ step2_summary│ step2_skills │ step2_projects│ step2_experience │
+         │ tailored_    │ ordered_     │ highlighted_ │ ONE call per   │
+         │ summary      │ skills[]     │ projects[],  │ profile role   │
+         │              │              │ key_achieve- │ (parallel)     │
+         │              │              │ ments[]      │ bullets[]      │
+         └──────────────┴──────────────┴──────────────┴──────────────┘
+                                       │
+                                       ▼
+         ┌─────────────────────────────────────────────────────────────┐
+         │ STEP 3 — Deterministic merge (no LLM)                       │
+         │ • _merge_tailored_with_profile — every original role kept   │
+         │ • _ensure_bullet_count — pad from originals if AI drops     │
+         │ • _order_experience_entries — reorder per plan, no omission │
+         └─────────────────────────────┬───────────────────────────────┘
+                                       │
+                                       ▼
+         ┌─────────────────────────────────────────────────────────────┐
+         │ STEP 4 — Structured package + document build                │
+         │ ResumePreviewResponse (Pydantic) + latex_source string        │
+         │ → latex_service.build_latex_document() (deterministic .tex)   │
+         └─────────────────────────────┬───────────────────────────────┘
+                                       │
+              ┌────────────────────────┴────────────────────────┐
+              ▼                                                 ▼
+   compile_latex_to_pdf()                              generate_docx_from_package()
+   subprocess → pdflatex                               python-docx
+   (ReportLab fallback if pdflatex missing)            structured .docx
 ```
+
+#### Structured output contract
+
+| Stage | Agent tag | JSON output (key fields) |
+|-------|-----------|--------------------------|
+| 0a | `resume_step0_structure` | `section_order`, `sections_found`, `structure_notes` |
+| 0b | `resume_step0_ats` | `primary_keywords`, `secondary_keywords`, `role_titles` |
+| 1 | `resume_step1_plan` | `priority_experience`, `keywords_to_weave`, `experience_order` |
+| 2a | `resume_step2_summary` | `tailored_summary` |
+| 2b | `resume_step2_skills` | `ordered_skills` (all skills, JD-prioritized) |
+| 2c | `resume_step2_projects` | `highlighted_projects`, `key_achievements`, `emphasis` |
+| 2d | `resume_step2_experience` | `company`, `role`, `duration`, `bullets[]` (same count as original) |
+
+**Final API model:** `ResumePreviewResponse` — summary, skills, experience entries, `section_order`, `ats_keywords`, `latex_source`, `tailoring_steps[]`.
+
+**Original content preservation:** On upload, `ResumeSnapshot` stores `raw_text` + heuristic `section_order`. Merge step guarantees no role or bullet is dropped (max 15 bullets/role via `MAX_EXPERIENCE_BULLETS`).
+
+#### Document generation
+
+| Format | Module | Mechanism |
+|--------|--------|-----------|
+| **LaTeX source** | `latex_service.py` | Deterministic string builder (`build_latex_document`) — escapes special chars, respects `section_order` |
+| **PDF** | `latex_service.py` | Python **`subprocess`** invokes system **`pdflatex`** (TeX Live / MacTeX). **Not** a Python LaTeX wrapper library (no `pylatex`, `latexmk` Python binding). Runs twice in a temp dir for stable output. |
+| **PDF fallback** | `pdf_service.py` | **ReportLab** when `pdflatex` is missing or compile fails |
+| **DOCX** | `docx_service.py` | **python-docx** — headings, bullets, section order mirrored from package |
 
 **Endpoints:**
-- `POST /api/apply/resume-preview` — JSON preview (passes `match_context` from Step 2)
-- `POST /api/apply/generate-resume` — ReportLab PDF with tailored experience bullets
+- `POST /api/apply/resume-preview` — JSON preview (+ `match_context`, `latex_source`)
+- `POST /api/apply/generate-resume` — PDF (LaTeX compile preferred)
+- `POST /api/apply/generate-resume/docx` — structured Word document
 
-**PDF (`pdf_service.py`):** renders rewritten experience bullets, JD-prioritized skills, highlighted projects.
+**Wrappers:** `resume_agent.py` orchestrates pipeline → `generate_resume_pdf_from_package()` / `generate_docx_from_package()`.
 
 ### 3.4 Agent 4 — Learning & Insights (`learning_agent.py`)
 
@@ -121,9 +198,12 @@ Step 2 — Produce package
                       └─ 3-step matching pipeline
                       └─ UI: score breakdown, step list, experience highlights
 5. Resume preview     POST /api/apply/resume-preview  (+ match_context)
-                      └─ 2-step tailoring pipeline
+                      └─ Multi-agent tailoring pipeline (structure + ATS + per-role)
+                      └─ UI: section order, ATS keywords, tailoring steps, latex_source
 6. Download PDF       POST /api/apply/generate-resume (+ match_context)
-7. Submit application POST /api/apply/submit → tracking pipeline
+                      └─ LaTeX → pdflatex (ReportLab fallback)
+7. Download DOCX      POST /api/apply/generate-resume/docx
+8. Submit application POST /api/apply/submit → tracking pipeline
 ```
 
 ---
@@ -182,7 +262,7 @@ See PR #10 for full guardrail matrix.
 
 GitHub Actions (`.github/workflows/ci.yml`):
 
-- `pytest` — 75+ backend tests (guardrails, matching pipeline helpers, routers)
+- `pytest` — 112+ backend tests (guardrails, matching/resume pipeline, LaTeX/DOCX, routers)
 - `vitest` + `npm run build` — frontend
 - Gate: **CI / All Tests Passed** (enable branch protection on `dev`)
 
@@ -208,17 +288,20 @@ ai-career-copilot/
 │       └── lib/api.ts
 └── backend/
     ├── agents/
-    │   ├── shared/profile_context.py   # Rich candidate context builder
-    │   ├── matching_pipeline.py        # 3-step JD matching
-    │   ├── resume_pipeline.py          # 2-step resume tailoring
+    │   ├── shared/profile_context.py      # Rich candidate context builder
+    │   ├── matching_pipeline.py           # 3-step JD matching
+    │   ├── resume_structure_agents.py     # Step 0: structure + ATS (parallel)
+    │   ├── resume_pipeline.py             # Multi-agent resume tailoring
     │   ├── profile_agent.py
-    │   ├── job_matching_agent.py       # thin wrapper → pipeline
-    │   ├── resume_agent.py             # thin wrapper → pipeline
+    │   ├── job_matching_agent.py          # thin wrapper → pipeline
+    │   ├── resume_agent.py                # pipeline → LaTeX PDF / DOCX
     │   └── learning_agent.py
     ├── services/
-    │   ├── guardrails/                 # Input/output/policy/rate limits
-    │   ├── openai_service.py           # LLM gateway
-    │   ├── pdf_service.py              # Tailored PDF generation
+    │   ├── guardrails/                    # Input/output/policy/rate limits
+    │   ├── openai_service.py              # LLM gateway (JSON structured output)
+    │   ├── latex_service.py               # LaTeX builder + pdflatex subprocess
+    │   ├── docx_service.py                # python-docx structured export
+    │   ├── pdf_service.py                 # ReportLab PDF fallback
     │   ├── job_feed_service.py         # Multi-source job aggregation
     │   └── job_recency.py              # Posted-within filtering
     ├── routers/                        # apply · jobs · auth · tracking · analysis

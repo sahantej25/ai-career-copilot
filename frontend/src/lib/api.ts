@@ -177,6 +177,27 @@ export async function generateResume(
   return data as Blob;
 }
 
+export async function generateResumeDocx(
+  jobDescription: string,
+  company: string,
+  role: string,
+  skillsRequired: string[] = [],
+  matchContext?: MatchResult | null
+): Promise<Blob> {
+  const { data } = await http.post(
+    "/api/apply/generate-resume/docx",
+    {
+      job_description: jobDescription,
+      company,
+      role,
+      skills_required: skillsRequired,
+      match_context: toMatchContext(matchContext),
+    },
+    { responseType: "blob" }
+  );
+  return data as Blob;
+}
+
 export async function submitApplication(payload: {
   company: string;
   role: string;

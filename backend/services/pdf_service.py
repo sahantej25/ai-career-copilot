@@ -9,6 +9,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.enums import TA_LEFT
 
 from models.schemas import CandidateProfile, TailoredExperienceEntry
+from services.guardrails.constants import MAX_EXPERIENCE_BULLETS
 
 
 DARK = colors.HexColor("#1E293B")
@@ -96,7 +97,7 @@ def generate_resume_pdf(
                     company=exp.company,
                     role=exp.role,
                     duration=exp.duration,
-                    bullets=exp.description[:10],
+                    bullets=exp.description[:MAX_EXPERIENCE_BULLETS],
                 )
                 for exp in profile.experience
             ]
@@ -105,7 +106,7 @@ def generate_resume_pdf(
             for exp in exp_entries:
                 story.append(Paragraph(exp.role, s["job_title"]))
                 story.append(Paragraph(f"{exp.company}  —  {exp.duration}", s["company"]))
-                for bullet in exp.bullets[:10]:
+                for bullet in exp.bullets[:MAX_EXPERIENCE_BULLETS]:
                     story.append(Paragraph(f"• {bullet}", s["bullet"]))
                 story.append(Spacer(1, 4))
 
