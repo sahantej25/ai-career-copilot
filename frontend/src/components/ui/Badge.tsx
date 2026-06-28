@@ -4,12 +4,21 @@ import { cn } from "@/lib/utils";
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "purple";
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: "bg-slate-700/60 text-slate-300 border-slate-600/40",
-  success: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  warning: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  danger: "bg-red-500/15 text-red-400 border-red-500/30",
-  info: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  purple: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+  default: "bg-slate-100 text-ink-600 border-slate-200",
+  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  warning: "bg-amber-50 text-amber-700 border-amber-200",
+  danger: "bg-rose-50 text-rose-600 border-rose-200",
+  info: "bg-sky-50 text-sky-700 border-sky-200",
+  purple: "bg-violet-50 text-violet-700 border-violet-200",
+};
+
+const dotColor: Record<BadgeVariant, string> = {
+  default: "bg-slate-400",
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-rose-500",
+  info: "bg-sky-500",
+  purple: "bg-violet-500",
 };
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
@@ -29,25 +38,24 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full border",
+        "inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full border backdrop-blur-sm whitespace-nowrap",
         variantStyles[variant],
         className
       )}
       {...props}
     >
       {dot && (
-        <span
-          className={cn(
-            "w-1.5 h-1.5 rounded-full",
-            pulse && "animate-pulse",
-            variant === "success" && "bg-emerald-400",
-            variant === "warning" && "bg-amber-400",
-            variant === "danger" && "bg-red-400",
-            variant === "info" && "bg-blue-400",
-            variant === "purple" && "bg-purple-400",
-            variant === "default" && "bg-slate-400",
+        <span className="relative flex h-1.5 w-1.5">
+          {pulse && (
+            <span
+              className={cn(
+                "absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping",
+                dotColor[variant]
+              )}
+            />
           )}
-        />
+          <span className={cn("relative inline-flex h-1.5 w-1.5 rounded-full", dotColor[variant])} />
+        </span>
       )}
       {children}
     </span>

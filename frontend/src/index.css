@@ -3,54 +3,163 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
   * {
-    @apply border-slate-700;
+    @apply border-slate-200/70;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-slate-950 text-slate-100 font-sans;
+    @apply bg-canvas text-ink-600 font-sans;
+    background-image:
+      radial-gradient(1100px 700px at 8% -10%, rgba(16, 185, 129, 0.1), transparent 55%),
+      radial-gradient(900px 650px at 100% 0%, rgba(139, 92, 246, 0.08), transparent 52%),
+      radial-gradient(900px 800px at 50% 120%, rgba(56, 189, 248, 0.08), transparent 55%),
+      radial-gradient(700px 600px at 85% 100%, rgba(251, 146, 60, 0.06), transparent 50%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-900;
+  }
+
   ::-webkit-scrollbar {
-    @apply w-1.5 h-1.5;
+    @apply w-2 h-2;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-slate-900;
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600 rounded-full;
+    @apply rounded-full;
+    background: rgba(100, 116, 139, 0.25);
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500;
+    background: rgba(100, 116, 139, 0.4);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500/60 ring-offset-2 ring-offset-canvas;
   }
 }
 
 @layer components {
+  /* ---------- Light frosted glass ---------- */
+  .glass {
+    @apply relative rounded-2xl border border-white/70;
+    background: rgba(255, 255, 255, 0.66);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.9) inset,
+      0 10px 30px -12px rgba(2, 6, 23, 0.12),
+      0 2px 6px -2px rgba(2, 6, 23, 0.06);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
   .glass-card {
-    @apply bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl;
+    @apply glass;
   }
+
+  /* Specular top-edge highlight */
+  .glass-edge::before {
+    content: "";
+    @apply pointer-events-none absolute inset-x-0 top-0 h-px rounded-t-2xl;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+  }
+
+  .glass-hover {
+    @apply transition-all duration-300 ease-out-expo hover:-translate-y-0.5;
+  }
+  .glass-hover:hover {
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.95) inset,
+      0 18px 44px -16px rgba(2, 6, 23, 0.18);
+  }
+
+  .glass-inset {
+    @apply rounded-xl border border-slate-200/80;
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  /* ---------- Typography ---------- */
+  .font-display {
+    font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  }
+
   .gradient-text {
-    @apply bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-ink-900 via-ink-800 to-ink-700 bg-clip-text text-transparent;
   }
+  .gradient-text-brand {
+    @apply bg-gradient-to-r from-brand-600 via-teal-500 to-brand-500 bg-clip-text text-transparent;
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-400;
+  }
+
+  /* ---------- Form controls ---------- */
   .input-field {
-    @apply w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-2.5 text-slate-100
-           placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50
-           focus:border-indigo-500/50 transition-all duration-200;
+    @apply w-full rounded-xl border border-slate-200/90 bg-white/70 px-4 py-2.5 text-sm text-ink-800
+           placeholder:text-ink-400 transition-all duration-200
+           focus:outline-none focus:border-brand-400 focus:bg-white
+           focus:ring-2 focus:ring-brand-500/20 hover:border-slate-300;
   }
+  select.input-field option {
+    @apply bg-white text-ink-800;
+  }
+
+  /* ---------- Button class hooks (kept in sync with Button.tsx) ---------- */
   .btn-primary {
-    @apply inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600
-           hover:from-indigo-500 hover:to-purple-500 text-white font-semibold px-5 py-2.5
-           rounded-xl transition-all duration-200 shadow-lg shadow-indigo-500/20
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white
+           bg-gradient-to-br from-brand-500 to-teal-600 transition-all duration-200
+           shadow-glow hover:shadow-glow-lg hover:-translate-y-0.5
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0;
   }
   .btn-secondary {
-    @apply inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700
-           text-slate-200 font-medium px-5 py-2.5 rounded-xl transition-all duration-200
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-ink-700
+           bg-white/70 border border-slate-200 transition-all duration-200
+           hover:bg-white hover:border-slate-300
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-danger {
-    @apply inline-flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30
-           text-red-400 font-medium px-4 py-2 rounded-xl transition-all duration-200;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-rose-600
+           bg-rose-50 border border-rose-200 transition-all duration-200 hover:bg-rose-100;
   }
-  .section-label {
-    @apply text-xs font-semibold uppercase tracking-widest text-slate-500;
+
+  /* ---------- Effects ---------- */
+  .grain-overlay {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+    background-size: 46px 46px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
