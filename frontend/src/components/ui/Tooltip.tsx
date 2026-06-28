@@ -1,0 +1,39 @@
+import { ReactNode, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+
+interface TooltipProps {
+  content: string;
+  children: ReactNode;
+  className?: string;
+}
+
+export function Tooltip({ content, children, className }: TooltipProps) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <div
+      className={cn("relative inline-flex", className)}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      <AnimatePresence>
+        {show && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50
+                       bg-ink-900 text-white text-xs font-medium
+                       px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg pointer-events-none"
+          >
+            {content}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-ink-900" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
