@@ -114,6 +114,12 @@ export interface GlobalAnalysis {
   last_updated: string;
 }
 
+export interface MatchStep {
+  step: number;
+  title: string;
+  summary: string;
+}
+
 export interface MatchResult {
   match_percentage: number;
   matched_skills: string[];
@@ -122,6 +128,25 @@ export interface MatchResult {
   recommendation: string;
   company?: string;
   role?: string;
+  matching_steps?: MatchStep[];
+  experience_highlights?: string[];
+  score_breakdown?: Record<string, number>;
+}
+
+export interface MatchContextInput {
+  match_percentage: number;
+  matched_skills: string[];
+  missing_skills: string[];
+  job_required_skills: string[];
+  experience_highlights?: string[];
+  score_breakdown?: Record<string, number>;
+}
+
+export interface TailoredExperienceEntry {
+  company: string;
+  role: string;
+  duration: string;
+  bullets: string[];
 }
 
 export interface ResumePreview {
@@ -130,6 +155,8 @@ export interface ResumePreview {
   highlighted_projects: string[];
   key_achievements: string[];
   emphasis: string;
+  tailored_experience?: TailoredExperienceEntry[];
+  tailoring_steps?: MatchStep[];
 }
 
 export interface ResumeStyle {

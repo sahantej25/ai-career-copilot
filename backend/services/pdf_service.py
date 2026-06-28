@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.enums import TA_LEFT
 
-from models.schemas import CandidateProfile
+from models.schemas import CandidateProfile, TailoredExperienceEntry
 
 
 DARK = colors.HexColor("#1E293B")
@@ -48,6 +48,7 @@ def generate_resume_pdf(
     tailored_summary: str,
     ordered_skills: list[str],
     highlighted_projects: Optional[list[str]] = None,
+    tailored_experience: Optional[list[TailoredExperienceEntry]] = None,
     section_order: Optional[list[str]] = None,
     accent_hex: str = "#10b981",
 ) -> bytes:
@@ -88,12 +89,23 @@ def generate_resume_pdf(
                 story.append(Paragraph("  •  ".join(chunk), s["body"]))
 
     def render_experience():
-        if profile.experience:
+        exp_entries = tailored_experience
+        if not exp_entries and profile.experience:
+            exp_entries = [
+                TailoredExperienceEntry(
+                    company=exp.company,
+                    role=exp.role,
+                    duration=exp.duration,
+                    bullets=exp.description[:4],
+                )
+                for exp in profile.experience
+            ]
+        if exp_entries:
             story.append(Paragraph("EXPERIENCE", s["section"]))
-            for exp in profile.experience:
+            for exp in exp_entries:
                 story.append(Paragraph(exp.role, s["job_title"]))
                 story.append(Paragraph(f"{exp.company}  —  {exp.duration}", s["company"]))
-                for bullet in exp.description[:4]:
+                for bullet in exp.bullets[:5]:
                     story.append(Paragraph(f"• {bullet}", s["bullet"]))
                 story.append(Spacer(1, 4))
 

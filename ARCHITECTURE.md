@@ -1,305 +1,249 @@
 # AI Career Copilot — Architecture Document
 
+> Last updated: reflects step-by-step matching & resume tailoring pipelines, guardrails, auth, job discovery, and CI.
+
+---
+
 ## 1. System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        BROWSER (User)                           │
-│                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │  Apply   │  │ Tracking │  │  Not     │  │   Global     │  │
-│  │  Tab     │  │  Tab     │  │ Selected │  │  Analysis    │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘  │
-│       │              │              │               │           │
-│  ┌────▼──────────────▼──────────────▼───────────────▼────────┐ │
-│  │           React + Zustand State (Session Storage)         │ │
-│  │           Framer Motion · Recharts · Tailwind CSS         │ │
-│  └───────────────────────────┬───────────────────────────────┘ │
-└──────────────────────────────│──────────────────────────────────┘
-                               │ HTTP (Axios · Vite Proxy)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     FastAPI Backend                             │
-│                                                                 │
-│  POST /api/apply/upload-profile                                │
-│  POST /api/apply/match                                          │
-│  POST /api/apply/generate-resume                               │
-│  POST /api/apply/submit                                         │
-│  GET  /api/tracking/applications                               │
-│  PUT  /api/tracking/applications/{id}/status                   │
-│  POST /api/analysis/rejection/analyze                          │
-│  GET  /api/analysis/global                                      │
-│  POST /api/analysis/global/refresh                             │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │                   AI Services Layer                    │    │
-│  │                                                        │    │
-│  │  Agent 1           Agent 2          Agent 3            │    │
-│  │  Profile           Job Match        Resume Gen         │    │
-│  │  Intelligence      Agent            Agent              │    │
-│  │  ─────────         ──────────       ──────────         │    │
-│  │  PyPDF2            Semantic         ReportLab PDF       │    │
-│  │  python-docx       Matching         Tailored layout     │    │
-│  │  Skill extract     Score 0-100      Ordered skills      │    │
-│  │                                                        │    │
-│  │  Agent 4: Learning & Insights Agent (⭐ Core)           │    │
-│  │  ────────────────────────────────────────              │    │
-│  │  Rejection analysis                                    │    │
-│  │  Confidence delta calculation                          │    │
-│  │  Global pattern detection                              │    │
-│  │  Career recommendations                                │    │
-│  └───────────────────────┬────────────────────────────────┘    │
-│                           │ OpenAI GPT-4o (JSON mode)          │
-│                           ▼                                     │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │                     data.json                          │    │
-│  │                                                        │    │
-│  │  metadata                                              │    │
-│  │  current_profile_state  ← living, evolving profile     │    │
-│  │  applications[]         ← all application records      │    │
-│  │  rejections[]           ← rejection notes              │    │
-│  │  profile_update_history[] ← skill evolution log        │    │
-│  │  global_analysis        ← macro career insights        │    │
-│  └────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           BROWSER (React + Vite)                         │
+│  Discover │ Apply │ Tracking │ Not Selected │ Global Analysis │ Auth     │
+│       Zustand (useAppStore + useAuthStore) · sessionStorage              │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                                │ HTTPS · JWT Bearer · Vite proxy /api
+                                ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         FastAPI Backend (main.py)                        │
+│  SecurityHeaders · MaxBodySize · CORS · Auth · Guardrails (ai_guard)     │
+│                                                                          │
+│  Routers: auth · apply · jobs · tracking · analysis · data               │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ 4 AI Agents   │     │ Job Feed Layer  │     │ Per-user JSON   │
+│ (OpenAI GPT)  │     │ LinkedIn/GH/HC  │     │ storage_service │
+└───────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
 ---
 
 ## 2. Core Concept: Living Profile
 
-The most important architectural decision is the **Living Candidate Profile**.
+The **Living Candidate Profile** (`current_profile_state`) evolves with every application and rejection:
 
 ```
-Resume Upload
-     │
-     ▼
-Profile Agent extracts:
-  - skills + confidence scores (0-100)
-  - experience, projects, domains
-  - creates current_profile_state
-     │
-     ▼
-User applies → Job Matching Agent
-  - reads current_profile_state
-  - calculates semantic match
-     │
-     ▼
-User gets rejected → Learning Agent
-  - reads rejection feedback
-  - MUTATES skill confidence scores
-  - adds new missing skills
-  - stores delta in profile_update_history
-     │
-     ▼
-Future applications use IMPROVED profile
-  - higher quality matching
-  - better tailored resumes
-  - more relevant recommendations
+Upload resume → Profile Agent parses skills, experience, projects
+       ↓
+Apply to jobs → Matching Pipeline scores fit vs JD (step-by-step)
+       ↓
+Generate resume → Resume Pipeline tailors bullets to JD + match analysis
+       ↓
+Rejection → Learning Agent adjusts skill confidence + recommendations
+       ↓
+Future matches & resumes use the improved profile
 ```
 
 ---
 
-## 3. Data Flow Per Tab
+## 3. AI Agent Architecture
 
-### Tab 1 — Apply
+### 3.1 Agent 1 — Profile Intelligence (`profile_agent.py`)
 
-```
-[Upload Resume] ──► profile_agent.parse_resume()
-                         │ PyPDF2/python-docx text extraction
-                         │ OpenAI JSON: skills[], experience[], projects[]
-                         ▼
-                    data.json[current_profile_state]
+| Input | Output |
+|-------|--------|
+| PDF / DOCX / TXT resume | `CandidateProfile` |
 
-[Paste JD] ──────► job_matching_agent.match_job()
-                         │ Semantic matching vs profile skills
-                         │ OpenAI JSON: match%, matched[], missing[]
-                         ▼
-                    UI: animated score, skill badges
+- Extracts text (PyPDF2 / python-docx)
+- OpenAI JSON: name, skills + confidence, experience bullets, projects, education
+- Optional reference resume → `ResumeStyle` (tone, section order — **style only, never content**)
 
-[Generate PDF] ──► resume_agent.generate_tailored_resume()
-                         │ OpenAI JSON: tailored_summary, ordered_skills
-                         │ ReportLab: professional PDF
-                         ▼
-                    Download .pdf
+### 3.2 Agent 2 — Job Matching (`matching_pipeline.py`)
 
-[Mark Submitted] ► POST /api/apply/submit
-                         │ Creates Application record
-                         ▼
-                    data.json[applications[]]
-```
-
-### Tab 2 — Tracking
+**Step-by-step pipeline** (3 LLM calls, evidence-based):
 
 ```
-GET /api/tracking/applications
-     │
-     ▼
-Kanban board (4 columns):
-  Submitted → Interview → Selected
-                        → Not Selected
+Step 1 — Extract JD requirements
+  → company, role, seniority, must-have / nice-to-have skills, responsibilities
 
-PUT /api/tracking/applications/{id}/status
-     │ Updates status + updated_at
-     ▼
-data.json[applications[]]
+Step 2 — Map candidate evidence
+  → experience_matches[], project_matches[], skill_evidence[], gaps[]
+  (uses full profile context including experience bullets)
+
+Step 3 — Score & recommend
+  → match_percentage, score_breakdown {skills, experience, projects, domain}
+  → matched_skills, missing_skills, experience_highlights, matching_steps[]
 ```
 
-### Tab 3 — Not Selected
+**Endpoint:** `POST /api/apply/match`
+
+**Response (`MatchResponse`):** score, skills, recommendation, `matching_steps`, `score_breakdown`, `experience_highlights`
+
+### 3.3 Agent 3 — Resume Tailoring (`resume_pipeline.py`)
+
+**Step-by-step pipeline** (2 LLM calls, uses match context):
 
 ```
-[Fill rejection form] ──► POST /api/analysis/rejection/analyze
-                               │
-                               ├─► learning_agent.analyze_rejection()
-                               │       OpenAI: skill_changes[], recommendations[]
-                               │
-                               ├─► MUTATE current_profile_state
-                               │       confidence scores updated
-                               │
-                               ├─► APPEND profile_update_history
-                               │
-                               └─► UPDATE application status → not_selected
+Step 1 — Plan tailoring
+  → priority experience/projects, keywords to weave, tailoring plan
 
-UI shows:
-  - SkillChange: Docker 80% → 50%
-  - Recommendations: ["Learn Kubernetes"]
-  - Profile evolution timeline
+Step 2 — Produce package
+  → tailored_summary, ordered_skills, highlighted_projects
+  → tailored_experience[] with REWRITTEN bullets per role (JD-aligned)
+  → key_achievements, emphasis, tailoring_steps[]
 ```
 
-### Tab 4 — Global Analysis
+**Endpoints:**
+- `POST /api/apply/resume-preview` — JSON preview (passes `match_context` from Step 2)
+- `POST /api/apply/generate-resume` — ReportLab PDF with tailored experience bullets
+
+**PDF (`pdf_service.py`):** renders rewritten experience bullets, JD-prioritized skills, highlighted projects.
+
+### 3.4 Agent 4 — Learning & Insights (`learning_agent.py`)
+
+| Trigger | Action |
+|---------|--------|
+| Rejection form | Analyze feedback → skill confidence deltas |
+| Global refresh | Aggregate patterns → radar chart + career recommendations |
+
+---
+
+## 4. Apply Tab — End-to-End Flow
 
 ```
-POST /api/analysis/global/refresh
-     │
-     ▼
-learning_agent.build_global_analysis(data)
-     │ All rejections aggregated
-     │ OpenAI: patterns, radar data, career_recommendations
-     ▼
-data.json[global_analysis]
-
-UI shows:
-  - Radar chart (6 skill categories)
-  - Recurring missing skills (across companies)
-  - Common interview topics
-  - Career recommendations
+1. Upload profile     POST /api/apply/upload-profile
+2. (Optional) reference resume style
+3. Paste JD + company/role
+4. Match              POST /api/apply/match
+                      └─ 3-step matching pipeline
+                      └─ UI: score breakdown, step list, experience highlights
+5. Resume preview     POST /api/apply/resume-preview  (+ match_context)
+                      └─ 2-step tailoring pipeline
+6. Download PDF       POST /api/apply/generate-resume (+ match_context)
+7. Submit application POST /api/apply/submit → tracking pipeline
 ```
 
 ---
 
-## 4. OpenAI Integration
+## 5. Discover Tab — Live Job Feed
 
-All AI calls use `response_format: {"type": "json_object"}` for **guaranteed structured output**.
+```
+GET /api/jobs/live?refresh=true
+  → LinkedIn guest search · Greenhouse boards · Hiring Cafe API
+  → Location filter · remote-only · posted_within (24h / 3d / 7d / anytime)
+  → Profile-based match scoring · cached per user
+```
+
+Preferences stored in `JobPreferences` via `PUT /api/auth/preferences`.
+
+---
+
+## 6. Guardrails Layer (`services/guardrails/`)
+
+All AI endpoints use `ai_guard` dependency:
+
+| Layer | Purpose |
+|-------|---------|
+| **Input** | HTML strip, length limits, URL validation, `<user_*>` delimiters |
+| **Injection** | Heuristic scan + audit log |
+| **Policy** | Appended to every system prompt (scope, no fabrication) |
+| **Output** | Score clamping, forbidden phrase scrubbing |
+| **Rate limit** | 30 AI calls / hour / user |
+| **Files** | PDF page limit, extension whitelist |
+
+See PR #10 for full guardrail matrix.
+
+---
+
+## 7. Auth & Data Isolation
+
+- Email/password (always) · Google OAuth (optional via `GOOGLE_CLIENT_ID`)
+- JWT sessions · per-user `backend/data/users/{id}/data.json`
+- No shared `data.json` in multi-user mode
+
+---
+
+## 8. OpenAI Integration
 
 ```python
-# Pattern used in all 4 agents:
-response = await client.chat.completions.create(
-    model="gpt-4o",
-    response_format={"type": "json_object"},
-    temperature=0.3,  # Low temperature for consistency
-    messages=[
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_context},
-    ],
-)
-data = json.loads(response.choices[0].message.content)
+# All agents use openai_service.chat_json():
+# - apply_agent_policy() on system prompt
+# - sanitize user content · max_tokens · timeout
+# - response_format: json_object
+# - agent tag for audit logging (no PII in logs)
 ```
 
 ---
 
-## 5. File Structure
+## 9. CI / Testing
+
+GitHub Actions (`.github/workflows/ci.yml`):
+
+- `pytest` — 75+ backend tests (guardrails, matching pipeline helpers, routers)
+- `vitest` + `npm run build` — frontend
+- Gate: **CI / All Tests Passed** (enable branch protection on `dev`)
+
+Tests run **without real API keys** — conftest forces empty secrets.
+
+---
+
+## 10. File Structure
 
 ```
 ai-career-copilot/
+├── ARCHITECTURE.md          ← this document
+├── .github/workflows/ci.yml
 ├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── tabs/
-│   │   │   │   ├── ApplyTab.tsx        # Upload → Match → Generate → Submit
-│   │   │   │   ├── TrackingTab.tsx     # Kanban pipeline
-│   │   │   │   ├── NotSelectedTab.tsx  # Rejection form + AI analysis
-│   │   │   │   └── GlobalAnalysisTab.tsx # Radar + insights
-│   │   │   ├── shared/
-│   │   │   │   ├── Header.tsx          # Sticky top bar
-│   │   │   │   └── Sidebar.tsx         # Left nav + mobile bottom bar
-│   │   │   └── ui/
-│   │   │       ├── Button.tsx          # Multi-variant button
-│   │   │       ├── Card.tsx            # Glassmorphism card
-│   │   │       ├── Badge.tsx           # Status/skill badges
-│   │   │       ├── Progress.tsx        # Animated progress + counter
-│   │   │       ├── Spinner.tsx         # Loading + AI thinking animation
-│   │   │       ├── Toast.tsx           # Toast notification system
-│   │   │       └── Tooltip.tsx         # Hover tooltips
-│   │   ├── hooks/
-│   │   │   └── useAppStore.ts          # Zustand global store
-│   │   ├── lib/
-│   │   │   ├── api.ts                  # All axios API calls
-│   │   │   └── utils.ts                # cn(), formatDate, STATUS_CONFIG
-│   │   └── types/index.ts              # TypeScript interfaces
-│   └── (config files)
-│
+│   └── src/
+│       ├── components/tabs/
+│       │   ├── DiscoverTab.tsx    # Live jobs + recency filter
+│       │   ├── ApplyTab.tsx       # Match → tailor → submit
+│       │   ├── TrackingTab.tsx    # Jobright-style pipeline
+│       │   ├── NotSelectedTab.tsx # Rejection analysis
+│       │   └── GlobalAnalysisTab.tsx
+│       ├── hooks/                 # useAppStore · useAuthStore
+│       └── lib/api.ts
 └── backend/
     ├── agents/
-    │   ├── profile_agent.py            # PDF/DOCX parsing + OpenAI
-    │   ├── job_matching_agent.py       # Semantic job matching
-    │   ├── resume_agent.py             # Tailored resume generation
-    │   └── learning_agent.py           # Rejection analysis + global
-    ├── routers/
-    │   ├── apply.py                    # /api/apply/*
-    │   ├── tracking.py                 # /api/tracking/*
-    │   └── analysis.py                 # /api/analysis/*
+    │   ├── shared/profile_context.py   # Rich candidate context builder
+    │   ├── matching_pipeline.py        # 3-step JD matching
+    │   ├── resume_pipeline.py          # 2-step resume tailoring
+    │   ├── profile_agent.py
+    │   ├── job_matching_agent.py       # thin wrapper → pipeline
+    │   ├── resume_agent.py             # thin wrapper → pipeline
+    │   └── learning_agent.py
     ├── services/
-    │   ├── storage_service.py          # Async data.json R/W
-    │   ├── openai_service.py           # OpenAI client wrapper
-    │   └── pdf_service.py              # ReportLab PDF generation
-    ├── models/schemas.py               # All Pydantic models
-    ├── config.py                       # Settings (pydantic-settings)
-    ├── main.py                         # FastAPI app + CORS + routers
-    └── data/data.json                  # Single source of truth
+    │   ├── guardrails/                 # Input/output/policy/rate limits
+    │   ├── openai_service.py           # LLM gateway
+    │   ├── pdf_service.py              # Tailored PDF generation
+    │   ├── job_feed_service.py         # Multi-source job aggregation
+    │   └── job_recency.py              # Posted-within filtering
+    ├── routers/                        # apply · jobs · auth · tracking · analysis
+    ├── models/schemas.py               # Pydantic models + validators
+    └── tests/
 ```
 
 ---
 
-## 6. UI/UX Design Principles
+## 11. Environment Variables
 
-- **Dark theme** — slate-950 background with indigo/purple gradient accents
-- **Glassmorphism cards** — `bg-slate-900/60 backdrop-blur-xl`
-- **Framer Motion** — page transitions, card entry animations, counter animations
-- **Responsive** — sidebar on desktop, bottom tab bar on mobile
-- **Error resilience** — every API call has try/catch with toast notifications
-- **Loading states** — per-action loading flags in Zustand, never global blocking
+| Variable | Where | Purpose |
+|----------|-------|---------|
+| `OPENAI_API_KEY` | backend/.env | Required for AI features |
+| `JWT_SECRET` | backend/.env | Auth tokens |
+| `GOOGLE_CLIENT_ID` | backend + frontend/.env | Optional Google sign-in |
+| `VITE_GOOGLE_CLIENT_ID` | frontend/.env | Optional Google button |
+| `VITE_API_URL` | frontend (prod) | Backend URL |
 
 ---
 
-## 7. Deployment Guide
+## 12. Deployment
 
-### Frontend → Vercel
+**Frontend:** Vercel / static host — `npm run build` → `dist/`
 
-```bash
-cd frontend
-npm run build        # Outputs to dist/
-# Push to GitHub → connect to Vercel
-# Add env: VITE_API_URL=https://your-backend.onrender.com
-```
+**Backend:** Render / Railway — `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-### Backend → Render
-
-```yaml
-# render.yaml
-services:
-  - type: web
-    name: ai-career-copilot-api
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: OPENAI_API_KEY
-        sync: false
-```
-
-### Environment Variables
-
-| Variable | Where | Value |
-|---------|-------|-------|
-| `OPENAI_API_KEY` | Backend (Render) | `sk-...` |
-| `VITE_API_URL` | Frontend (Vercel) | `https://api.onrender.com` |
+Both servers must run locally for development (backend `:8000`, frontend `:5173`).

@@ -99,7 +99,10 @@ async def match_against_profile(req: MatchRequest, data: AppData = Depends(_requ
 async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
     try:
         return await build_resume_package(
-            data.current_profile_state, req.job_description, data.resume_style
+            data.current_profile_state,
+            req.job_description,
+            data.resume_style,
+            match=req.match_context,
         )
     except AIConfigurationError:
         raise HTTPException(503, "AI resume preview requires OPENAI_API_KEY to be configured.")
@@ -111,7 +114,10 @@ async def resume_preview(req: GenerateResumeRequest, data: AppData = Depends(_re
 async def generate_resume(req: GenerateResumeRequest, data: AppData = Depends(_require_profile)):
     try:
         pdf_bytes = await generate_tailored_resume(
-            data.current_profile_state, req.job_description, data.resume_style
+            data.current_profile_state,
+            req.job_description,
+            data.resume_style,
+            match=req.match_context,
         )
     except AIConfigurationError:
         raise HTTPException(503, "AI resume generation requires OPENAI_API_KEY to be configured.")

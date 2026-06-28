@@ -1,6 +1,6 @@
 import axios from "axios";
 import type {
-  CandidateProfile, MatchResult, Application, ApplicationStatus,
+  CandidateProfile, MatchResult, MatchContextInput, Application, ApplicationStatus,
   AnalyzeRejectionResponse, GlobalAnalysis, ProfileUpdate, RejectionNote,
   ResumePreview, ResumeStyle, JobFeedResponse, LiveJobsResponse, AuthResponse,
 } from "@/types";
@@ -118,17 +118,31 @@ export async function matchJob(
   return data as MatchResult;
 }
 
+function toMatchContext(match: MatchResult | null | undefined): MatchContextInput | undefined {
+  if (!match) return undefined;
+  return {
+    match_percentage: match.match_percentage,
+    matched_skills: match.matched_skills,
+    missing_skills: match.missing_skills,
+    job_required_skills: match.job_required_skills,
+    experience_highlights: match.experience_highlights,
+    score_breakdown: match.score_breakdown,
+  };
+}
+
 export async function resumePreview(
   jobDescription: string,
   company: string,
   role: string,
-  skillsRequired: string[] = []
+  skillsRequired: string[] = [],
+  matchContext?: MatchResult | null
 ): Promise<ResumePreview> {
   const { data } = await http.post("/api/apply/resume-preview", {
     job_description: jobDescription,
     company,
     role,
     skills_required: skillsRequired,
+    match_context: toMatchContext(matchContext),
   });
   return data as ResumePreview;
 }
@@ -137,11 +151,18 @@ export async function generateResume(
   jobDescription: string,
   company: string,
   role: string,
-  skillsRequired: string[] = []
+  skillsRequired: string[] = [],
+  matchContext?: MatchResult | null
 ): Promise<Blob> {
   const { data } = await http.post(
     "/api/apply/generate-resume",
-    { job_description: jobDescription, company, role, skills_required: skillsRequired },
+    {
+      job_description: jobDescription,
+      company,
+      role,
+      skills_required: skillsRequired,
+      match_context: toMatchContext(matchContext),
+    },
     { responseType: "blob" }
   );
   return data as Blob;
